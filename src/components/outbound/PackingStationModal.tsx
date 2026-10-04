@@ -44,6 +44,12 @@ export const PackingStationModal: React.FC<PackingStationModalProps> = ({
   const [isSuccess, setIsSuccess] = useState(false);
   const [createdPallet, setCreatedPallet] = useState<any | null>(null);
 
+  // Estadio de Packing & Re-empaque (Clasificación por Tipo, Color y Temporada)
+  const [clasificacionCalidad, setClasificacionCalidad] = useState<'A' | 'B' | 'C'>('A');
+  const [temporada, setTemporada] = useState<string>('Temporada Actual');
+  const [colorVariante, setColorVariante] = useState<string>('');
+  const [motivoReempaque, setMotivoReempaque] = useState<string>('');
+
   // 1. Cargar detalles del pedido completos si no vienen precargados
   useEffect(() => {
     if (!isOpen || !pedido?.id) {
@@ -67,7 +73,12 @@ export const PackingStationModal: React.FC<PackingStationModalProps> = ({
 
       setIsLoadingDetalle(true);
       try {
-        const full = await pedidosApi.obtenerPedidoConDetalle(pedido.id);
+        const targetId = pedido.id || pedido.pedido_id;
+        if (!targetId) {
+          if (isMounted) setPedidoDetallado(pedido);
+          return;
+        }
+        const full = await pedidosApi.obtenerPedidoConDetalle(targetId);
         if (isMounted) {
           setPedidoDetallado(full || pedido);
         }
@@ -393,6 +404,80 @@ export const PackingStationModal: React.FC<PackingStationModalProps> = ({
                     </table>
                   )}
                 </div>
+              </div>
+
+              {/* Estadio de Clasificación, Re-empaque y Calidad */}
+              <div className="p-4 rounded-xl bg-amber-50/70 dark:bg-[#271d12] border border-amber-200 dark:border-[#5a3814] space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-amber-900 dark:text-[#ffddb8] uppercase tracking-wider flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-amber-600 dark:text-[#ffb960]" />
+                    Estadio de Clasificación y Re-Empaque
+                  </h3>
+                  <span className="text-[10px] px-2 py-0.5 rounded font-bold bg-amber-200 text-amber-900 dark:bg-[#4a2e0e] dark:text-[#ffddb8]">
+                    Clasificación Actual: Clase {clasificacionCalidad}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1">
+                      Color / Variante
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Ej. Azul Marino, Rojo, Estampado"
+                      value={colorVariante}
+                      onChange={(e) => setColorVariante(e.target.value)}
+                      className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1">
+                      Temporada del Lote
+                    </label>
+                    <select
+                      value={temporada}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setTemporada(val);
+                        if (val === 'Fuera de Temporada') {
+                          setClasificacionCalidad('C');
+                        }
+                      }}
+                      className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1]"
+                    >
+                      <option value="Temporada Actual">Temporada Actual (Vigente)</option>
+                      <option value="Verano 2026">Verano 2026</option>
+                      <option value="Invierno 2025">Invierno 2025</option>
+                      <option value="Fuera de Temporada">Fuera de Temporada (Auto C)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1">
+                      Clasificación de Calidad
+                    </label>
+                    <select
+                      value={clasificacionCalidad}
+                      onChange={(e) => setClasificacionCalidad(e.target.value as any)}
+                      className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1] font-bold"
+                    >
+                      <option value="A">Clase A - Primera Calidad / Temporada</option>
+                      <option value="B">Clase B - Segunda Calidad / Detalle</option>
+                      <option value="C">Clase C - Fuera de Temporada / Discontinuo</option>
+                    </select>
+                  </div>
+                </div>
+
+                {clasificacionCalidad === 'C' && (
+                  <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-700 dark:text-[#ffb4ab] text-[11px] flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                    <span>
+                      <strong>Atención:</strong> Asignado como <strong>Clase C</strong> por estar fuera de temporada o requerir reacondicionamiento comercial.
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Form Pallet LPN and Dimensions */}

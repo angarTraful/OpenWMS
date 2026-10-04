@@ -48,10 +48,12 @@ export const RemitoPrintModal: React.FC<RemitoPrintModalProps> = ({
       const cargarDatos = async () => {
         setLoading(true);
         try {
+          const targetId = pedido.id || pedido.pedido_id;
+          if (!targetId) return;
           const [dataRemito, dataPedido] = await Promise.all([
-            pedidosApi.obtenerRemitoPorPedido(pedido.id),
+            pedidosApi.obtenerRemitoPorPedido(targetId),
             (!pedido.detalles || pedido.detalles.length === 0)
-              ? pedidosApi.obtenerPedidoConDetalle(pedido.id)
+              ? pedidosApi.obtenerPedidoConDetalle(targetId)
               : Promise.resolve(pedido),
           ]);
 
@@ -375,23 +377,23 @@ export const RemitoPrintModal: React.FC<RemitoPrintModalProps> = ({
               <div className="grid grid-cols-5 gap-2 border border-slate-900 rounded-lg p-3 bg-slate-50 mb-6 text-center font-mono">
                 <div>
                   <div className="text-[9px] text-slate-500 uppercase font-bold">Total Bultos</div>
-                  <div className="text-sm font-bold text-slate-950">{remitoEmitido.total_bultos}</div>
+                  <div className="text-sm font-bold text-slate-950">{remitoEmitido?.total_bultos || 0}</div>
                 </div>
                 <div>
                   <div className="text-[9px] text-slate-500 uppercase font-bold">Total Pallets</div>
-                  <div className="text-sm font-bold text-slate-950">{remitoEmitido.total_pallets}</div>
+                  <div className="text-sm font-bold text-slate-950">{remitoEmitido?.total_pallets || 0}</div>
                 </div>
                 <div>
                   <div className="text-[9px] text-slate-500 uppercase font-bold">Peso Bruto</div>
-                  <div className="text-sm font-bold text-slate-950">{formatNumber(remitoEmitido.peso_total_kg, 2)} kg</div>
+                  <div className="text-sm font-bold text-slate-950">{formatNumber(remitoEmitido?.peso_total_kg || 0, 2)} kg</div>
                 </div>
                 <div>
                   <div className="text-[9px] text-slate-500 uppercase font-bold">Volumen M³</div>
-                  <div className="text-sm font-bold text-blue-700">{formatM3(remitoEmitido.volumen_total_m3)}</div>
+                  <div className="text-sm font-bold text-blue-700">{formatM3(remitoEmitido?.volumen_total_m3 || 0)}</div>
                 </div>
                 <div>
                   <div className="text-[9px] text-slate-500 uppercase font-bold">Val. Declarado</div>
-                  <div className="text-sm font-bold text-emerald-700">${formatNumber(remitoEmitido.valor_declarado_total, 2)}</div>
+                  <div className="text-sm font-bold text-emerald-700">${formatNumber(remitoEmitido?.valor_declarado_total || 0, 2)}</div>
                 </div>
               </div>
 

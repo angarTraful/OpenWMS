@@ -29,6 +29,9 @@ import { formatDate, formatDateTime, formatNumber, formatM3 } from '@/lib/utils'
 import { recepcionesApi } from '@/api/recepcionesApi';
 import { almacenApi } from '@/api/almacenApi';
 import { NuevaRecepcionModal } from './NuevaRecepcionModal';
+import { RecursosDescargaModal } from './RecursosDescargaModal';
+import { BrotherLabelPrinterModal } from '@/components/common/BrotherLabelPrinterModal';
+import { RomaneoEditorModal } from '@/components/common/RomaneoEditorModal';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 
 interface InboundMonitorProps {
@@ -59,8 +62,12 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
   const [loteDetalleEditado, setLoteDetalleEditado] = useState('');
   const [lotePutaway, setLotePutaway] = useState('');
 
-  // Modal Nueva Recepción
+  // Modal Nueva Recepción, Recursos, Romaneo y Etiquetas
   const [nuevaRecepcionModalOpen, setNuevaRecepcionModalOpen] = useState(false);
+  const [recursosModalOpen, setRecursosModalOpen] = useState(false);
+  const [romaneoEditorOpen, setRomaneoEditorOpen] = useState(false);
+  const [labelModalOpen, setLabelModalOpen] = useState(false);
+  const [etiquetaParaImprimir, setEtiquetaParaImprimir] = useState<any | null>(null);
 
   // Modal Putaway
   const [putawayModalOpen, setPutawayModalOpen] = useState(false);
@@ -741,6 +748,67 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                         </div>
                       </div>
                     )}
+
+                    {/* Botones de Recursos, Romaneo & Etiquetas Brother */}
+                    <div className="col-span-2 sm:col-span-5 pt-3 border-t border-slate-200 dark:border-[#2a2a2a] flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRecursosModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 dark:bg-[#0f2434] dark:hover:bg-[#153447] dark:text-[#75d1ff] dark:border-[#1b435d] text-xs font-semibold transition-colors shadow-xs"
+                      >
+                        <Layers className="w-3.5 h-3.5 text-blue-600 dark:text-[#75d1ff]" />
+                        <span>Recursos de Descarga</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setRomaneoEditorOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 dark:bg-[#0f241a] dark:hover:bg-[#153426] dark:text-[#69f0ae] dark:border-[#1b4332] text-xs font-semibold transition-colors shadow-xs"
+                        title="Cargar o corregir rollos no estándar en el romaneo"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-emerald-600 dark:text-[#69f0ae]" />
+                        <span>Cargar / Editar Romaneo</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const detalles = detailData.detalles || [];
+                          const listaGenerada: any[] = [];
+
+                          detalles.forEach((d: any) => {
+                            const art = d.articulo || {};
+                            const cantBultos = Math.max(1, Number(d.cantidad_esperada || d.cantidad_solicitada || 1));
+                            const skuCode = art.sku || 'SKU-TEXTIL';
+
+                            for (let i = 1; i <= cantBultos; i++) {
+                              listaGenerada.push({
+                                idSecuencia: `${skuCode}-${String(i).padStart(4, '0')}`,
+                                secuenciaNum: i,
+                                sku: skuCode,
+                                nombreArticulo: art.nombre || 'Rollo de Tela',
+                                cliente: detailData.cliente?.razon_social || 'OPEN CARGO',
+                                medidaReal: Number(art.unidades_por_bulto || 50),
+                                medidaStd: Number(art.unidades_por_bulto || 50),
+                                unidadMedida: art.unidad_medida || 'mts',
+                                tipoEmpaque: art.unidad_medida === 'bulto' ? 'Bulto' : 'Rollo',
+                                esExcepcion: false,
+                                lote: d.lote_declarado || detailData.lote_defecto || 'REC-LOTE',
+                                nroPedidoOrOc: detailData.numero_recepcion || 'REC-001',
+                              });
+                            }
+                          });
+
+                          setEtiquetaParaImprimir(listaGenerada.length > 0 ? listaGenerada[0] : null);
+                          (window as any)._listaEtiquetasTmp = listaGenerada;
+                          setLabelModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-800 border border-red-200 dark:bg-[#340f12] dark:hover:bg-[#471518] dark:text-[#ffb4ab] dark:border-[#5d1b1f] text-xs font-semibold transition-colors shadow-xs"
+                      >
+                        <Barcode className="w-3.5 h-3.5 text-red-600 dark:text-[#ffb4ab]" />
+                        <span>Imprimir Tirada de Etiquetas Brother LPN (29x62mm)</span>
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1189,6 +1257,34 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
           </div>
         </ModalPortal>
       )}
+
+      {/* Modal Recursos de Descarga */}
+      <RecursosDescargaModal
+        isOpen={recursosModalOpen}
+        onClose={() => setRecursosModalOpen(false)}
+        recepcionId={selectedRecepcion?.id || detailData?.id || ''}
+        numeroRecepcion={selectedRecepcion?.numero_recepcion || detailData?.numero_recepcion || ''}
+        onSuccess={onRefresh}
+      />
+
+      {/* Modal Carga / Edición de Romaneo */}
+      <RomaneoEditorModal
+        isOpen={romaneoEditorOpen}
+        onClose={() => setRomaneoEditorOpen(false)}
+        tipo="recepcion"
+        idEntidad={selectedRecepcion?.id || detailData?.id || ''}
+        numeroReferencia={selectedRecepcion?.numero_recepcion || detailData?.numero_recepcion || ''}
+        detallesArticulos={detailData?.detalles || []}
+        onSuccess={onRefresh}
+      />
+
+      {/* Modal Impresión Etiqueta Brother LPN (29x62mm) */}
+      <BrotherLabelPrinterModal
+        isOpen={labelModalOpen}
+        onClose={() => setLabelModalOpen(false)}
+        etiquetaData={etiquetaParaImprimir}
+        listaEtiquetas={(window as any)._listaEtiquetasTmp || []}
+      />
     </div>
   );
 };

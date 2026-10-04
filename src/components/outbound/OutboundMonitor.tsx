@@ -36,6 +36,7 @@ import {
   Phone,
   User,
   Cloud,
+  Barcode,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { formatDate, formatDateTime, formatNumber, formatM3, compressImage } from '@/lib/utils';
@@ -53,6 +54,11 @@ import { NuevoPedidoModal } from './NuevoPedidoModal';
 import { ImportarPedidosModal } from './ImportarPedidosModal';
 import { PackingStationModal } from './PackingStationModal';
 import { RemitoPrintModal } from './RemitoPrintModal';
+import { PlanillaRomaneoPrintModal } from './PlanillaRomaneoPrintModal';
+import { RotuloExpresoPrintModal } from './RotuloExpresoPrintModal';
+import { HojaTrabajoOperativaPrintModal } from './HojaTrabajoOperativaPrintModal';
+import { RomaneoEditorModal } from '@/components/common/RomaneoEditorModal';
+import { BrotherLabelPrinterModal } from '@/components/common/BrotherLabelPrinterModal';
 import { AsignarRutaModal } from './AsignarRutaModal';
 import { HojaRutaPrintModal } from './HojaRutaPrintModal';
 import { GoogleDriveConfigModal } from '@/components/common/GoogleDriveConfigModal';
@@ -93,6 +99,11 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
   const [importarModalOpen, setImportarModalOpen] = useState(false);
   const [packingModalOpen, setPackingModalOpen] = useState(false);
   const [remitoModalOpen, setRemitoModalOpen] = useState(false);
+  const [romaneoModalOpen, setRomaneoModalOpen] = useState(false);
+  const [romaneoEditorOpen, setRomaneoEditorOpen] = useState(false);
+  const [rotuloExpresoModalOpen, setRotuloExpresoModalOpen] = useState(false);
+  const [brotherLpnModalOpen, setBrotherLpnModalOpen] = useState(false);
+  const [hojaTrabajoOpen, setHojaTrabajoOpen] = useState(false);
   const [asignarRutaOpen, setAsignarRutaOpen] = useState(false);
   const [pedidoForRemito, setPedidoForRemito] = useState<any | null>(null);
 
@@ -196,11 +207,19 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
   };
 
   const handleSelectPedido = async (ped: any) => {
+    if (!ped) return;
     setSelectedPedido(ped);
+    setDetailData(ped);
     setLoadingDetail(true);
     try {
-      const data = await pedidosApi.obtenerPedidoConDetalle(ped.id);
-      setDetailData(data);
+      const targetId = ped.pedido_id || ped.pedido?.id || ped.id;
+      if (targetId) {
+        const data = await pedidosApi.obtenerPedidoConDetalle(targetId);
+        if (data) {
+          setDetailData(data);
+          setSelectedPedido(data);
+        }
+      }
     } catch (err: any) {
       console.error('Error fetching order detail:', err);
     } finally {
@@ -589,13 +608,8 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                   filteredPedidos.map((ped, pIdx) => {
                     const isSelected = selectedPedido?.id === ped.id;
                     return (
-                      <motion.div
+                      <div
                         key={ped.id}
-                        layout
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.2, delay: Math.min(pIdx * 0.025, 0.25) }}
-                        whileHover={{ y: -1, transition: { duration: 0.12 } }}
                         onClick={() => handleSelectPedido(ped)}
                         className={`p-2.5 sm:p-3 cursor-pointer transition-all border-b border-slate-100 dark:border-[#44424a] ${
                           isSelected
@@ -711,7 +725,7 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                               </>
                             )}
 
-                            {ped.estado === 'agrupado_salida' && (
+                            {(ped.estado === 'agrupado_salida' || ped.estado === 'despachado') && (
                               <>
                                 <button
                                   onClick={(e) => {
@@ -725,23 +739,25 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                                   <Printer className="w-3 h-3" />
                                   Ver Remito Rx
                                 </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDespacharPedido(ped.id);
-                                  }}
-                                  disabled={isSubmitting}
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 dark:bg-[#2a0e12] dark:hover:bg-[#3d1419] dark:text-[#ffb4ab] dark:border-[#690005] transition-colors shadow-xs"
-                                  title="Deduce el stock físico reservado y registra la salida definitiva en el Kardex"
-                                >
-                                  <Truck className="w-3 h-3" />
-                                  Despachar
-                                </button>
+                                {ped.estado === 'agrupado_salida' && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDespacharPedido(ped.id);
+                                    }}
+                                    disabled={isSubmitting}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 dark:bg-[#2a0e12] dark:hover:bg-[#3d1419] dark:text-[#ffb4ab] dark:border-[#690005] transition-colors shadow-xs"
+                                    title="Deduce el stock físico reservado y registra la salida definitiva en el Kardex"
+                                  >
+                                    <Truck className="w-3 h-3" />
+                                    Despachar
+                                  </button>
+                                )}
                               </>
                             )}
                           </div>
                         </div>
-                      </motion.div>
+                      </div>
                     );
                   })
                 )}
@@ -752,13 +768,12 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
       )}
 
       {/* Order Detail & Picking Tasks Centered Modal */}
-      <AnimatePresence>
-        {selectedPedido && (
-          <ModalPortal>
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
-              onClick={() => setSelectedPedido(null)}
-            >
+      {selectedPedido && (
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm"
+            onClick={() => setSelectedPedido(null)}
+          >
               <div
                 className="bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden text-slate-800 dark:text-[#e5e2e1]"
                 onClick={(e) => e.stopPropagation()}
@@ -800,7 +815,7 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                       </button>
                     )}
 
-                    {(selectedPedido.estado === 'preparado' || selectedPedido.estado === 'agrupado_salida') && (
+                    {(selectedPedido.estado === 'preparado' || selectedPedido.estado === 'agrupado_salida' || selectedPedido.estado === 'despachado') && (
                       <>
                         <button
                           onClick={() => setPackingModalOpen(true)}
@@ -812,6 +827,18 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                         <button
                           onClick={() => {
                             setPedidoForRemito(selectedPedido);
+                            setHojaTrabajoOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 dark:bg-[#0f2534] dark:hover:bg-[#153447] dark:text-[#75d1ff] dark:border-[#1b435d] transition-colors shadow-xs"
+                          title="Imprimir Hoja de Trabajo Operativa / Picking para conteo y control físico"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          Hoja de Trabajo
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setPedidoForRemito(selectedPedido);
                             setRemitoModalOpen(true);
                           }}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 dark:bg-[#0f241a] dark:hover:bg-[#153426] dark:text-[#69f0ae] dark:border-[#1b4332] transition-colors shadow-xs"
@@ -819,15 +846,65 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                           <FileText className="w-3.5 h-3.5" />
                           Remito Rx
                         </button>
+
                         <button
-                          onClick={() => handleDespacharPedido(selectedPedido.id)}
-                          disabled={isSubmitting}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 dark:bg-[#2a0e12] dark:hover:bg-[#3d1419] dark:text-[#ffb4ab] dark:border-[#690005] transition-colors shadow-xs"
-                          title="Deduce el stock físico reservado y registra la salida definitiva en el Kardex"
+                          onClick={() => {
+                            setPedidoForRemito(selectedPedido);
+                            setRomaneoEditorOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 dark:bg-[#0f241a] dark:hover:bg-[#153426] dark:text-[#69f0ae] dark:border-[#1b4332] transition-colors shadow-xs"
+                          title="Cargar o corregir los metros/kilos de los rollos no estándar al finalizar el pedido"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          Cargar Romaneo
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setPedidoForRemito(selectedPedido);
+                            setBrotherLpnModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-red-50 hover:bg-red-100 text-red-800 border border-red-200 dark:bg-[#340f12] dark:hover:bg-[#471518] dark:text-[#ffb4ab] dark:border-[#5d1b1f] transition-colors shadow-xs"
+                          title="Imprimir la tirada de etiquetas Brother LPN para los rollos del pedido"
+                        >
+                          <Barcode className="w-3.5 h-3.5" />
+                          Etiquetas LPN (29x62mm)
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setPedidoForRemito(selectedPedido);
+                            setRomaneoModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 dark:bg-[#0f1d34] dark:hover:bg-[#152747] dark:text-[#75d1ff] dark:border-[#1b345d] transition-colors shadow-xs"
+                          title="Imprimir Planilla de Romaneo independiente del Remito"
+                        >
+                          <FileSpreadsheet className="w-3.5 h-3.5" />
+                          Planilla Romaneo
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setPedidoForRemito(selectedPedido);
+                            setRotuloExpresoModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 dark:bg-[#34240f] dark:hover:bg-[#473215] dark:text-[#ffddb8] dark:border-[#5d401b] transition-colors shadow-xs"
+                          title="Imprimir tirada de rótulos 62x100mm para Expreso (Open Cargo)"
                         >
                           <Truck className="w-3.5 h-3.5" />
-                          Despachar Salida
+                          Rótulos Expreso
                         </button>
+                        {selectedPedido?.id && (
+                          <button
+                            onClick={() => handleDespacharPedido(selectedPedido.id)}
+                            disabled={isSubmitting}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 dark:bg-[#2a0e12] dark:hover:bg-[#3d1419] dark:text-[#ffb4ab] dark:border-[#690005] transition-colors shadow-xs"
+                            title="Deduce el stock físico reservado y registra la salida definitiva en el Kardex"
+                          >
+                            <Truck className="w-3.5 h-3.5" />
+                            Despachar Salida
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
@@ -835,12 +912,12 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
 
                 {/* Backorder Banner and Short-Ship Action */}
                 {(() => {
-                  if (!detailData?.detalles) return null;
-                  const totalSol = detailData.detalles.reduce((acc: number, d: any) => acc + Number(d.cantidad_solicitada || 0), 0);
-                  const totalCub = detailData.detalles.reduce((acc: number, d: any) => acc + Math.max(Number(d.cantidad_reservada || 0), Number(d.cantidad_separada || 0)), 0);
+                  if (!detailData?.detalles || !Array.isArray(detailData.detalles)) return null;
+                  const totalSol = detailData.detalles.reduce((acc: number, d: any) => acc + Number(d?.cantidad_solicitada || 0), 0);
+                  const totalCub = detailData.detalles.reduce((acc: number, d: any) => acc + Math.max(Number(d?.cantidad_reservada || 0), Number(d?.cantidad_separada || 0)), 0);
                   const faltante = totalSol - totalCub;
 
-                  if (faltante > 0 && selectedPedido.estado !== 'despachado' && selectedPedido.estado !== 'cancelado') {
+                  if (faltante > 0 && selectedPedido?.estado !== 'despachado' && selectedPedido?.estado !== 'cancelado') {
                     return (
                       <div className="p-3 bg-amber-50/70 border-b border-amber-200 dark:bg-[#3b2a10]/50 dark:border-[#6d4c1b] space-y-2 flex-shrink-0">
                         <div className="flex items-center justify-between text-xs text-amber-900 dark:text-[#ffddb8]">
@@ -853,22 +930,26 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                           Hay unidades que no pudieron reservarse por falta de existencias. Puedes re-intentar alocación al recibir ingresos o recortar el pedido a lo preparado.
                         </p>
                         <div className="flex flex-wrap items-center gap-2 pt-1">
-                          <button
-                            onClick={() => handleAsignarFEFO(selectedPedido.id)}
-                            disabled={isSubmitting}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-white hover:bg-slate-100 text-violet-700 border border-violet-300 dark:bg-[#201f1f] dark:hover:bg-[#2a2a2a] dark:text-[#dab9ff] dark:border-[#dab9ff]/30 transition-colors shadow-xs"
-                          >
-                            <RefreshCw className="w-3 h-3" />
-                            Re-intentar Alocación FEFO
-                          </button>
-                          <button
-                            onClick={() => handleAjustarStockPreparado(selectedPedido.id)}
-                            disabled={isSubmitting}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-violet-600 hover:bg-violet-700 text-white dark:bg-[#dab9ff] dark:hover:bg-[#eedbff] dark:text-[#460283] transition-colors shadow-xs"
-                          >
-                            <Zap className="w-3 h-3" />
-                            Ajustar al Stock Preparado (Corte)
-                          </button>
+                          {selectedPedido?.id && (
+                            <>
+                              <button
+                                onClick={() => handleAsignarFEFO(selectedPedido.id)}
+                                disabled={isSubmitting}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-white hover:bg-slate-100 text-violet-700 border border-violet-300 dark:bg-[#201f1f] dark:hover:bg-[#2a2a2a] dark:text-[#dab9ff] dark:border-[#dab9ff]/30 transition-colors shadow-xs"
+                              >
+                                <RefreshCw className="w-3 h-3" />
+                                Re-intentar Alocación FEFO
+                              </button>
+                              <button
+                                onClick={() => handleAjustarStockPreparado(selectedPedido.id)}
+                                disabled={isSubmitting}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-violet-600 hover:bg-violet-700 text-white dark:bg-[#dab9ff] dark:hover:bg-[#eedbff] dark:text-[#460283] transition-colors shadow-xs"
+                              >
+                                <Zap className="w-3 h-3" />
+                                Ajustar al Stock Preparado (Corte)
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     );
@@ -878,14 +959,9 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
 
                 {/* Modal Scrollable Body */}
                 <div className="p-4 space-y-3 overflow-y-auto flex-1">
-                  {loadingDetail ? (
-                    <div className="py-8 text-center text-slate-400 dark:text-[#cdc3d4]">
-                      <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-violet-600 dark:text-[#dab9ff]" />
-                      <span className="text-xs">Cargando renglones del pedido...</span>
-                    </div>
-                  ) : !detailData?.detalles || detailData.detalles.length === 0 ? (
+                  {!detailData?.detalles || !Array.isArray(detailData.detalles) || detailData.detalles.length === 0 ? (
                     <div className="py-8 text-center text-slate-400 dark:text-[#cdc3d4] text-xs">
-                      Sin renglones para este pedido.
+                      {loadingDetail ? 'Cargando renglones del pedido...' : 'Sin renglones para este pedido.'}
                     </div>
                   ) : (
                     detailData.detalles.map((det: any) => {
@@ -992,7 +1068,6 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
             </div>
           </ModalPortal>
         )}
-      </AnimatePresence>
 
       {/* TAB 2: REMITOS RX DE TRÁNSITO */}
       {activeSubTab === 'remitos' && (
@@ -2122,6 +2197,47 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
       <GoogleDriveConfigModal
         isOpen={googleDriveModalOpen}
         onClose={() => setGoogleDriveModalOpen(false)}
+      />
+
+      {/* Modal de Planilla de Romaneo Independiente */}
+      <PlanillaRomaneoPrintModal
+        isOpen={romaneoModalOpen}
+        onClose={() => setRomaneoModalOpen(false)}
+        pedido={pedidoForRemito || selectedPedido}
+      />
+
+      {/* Modal de Rótulos de Expreso al Interior (62x100mm) */}
+      <RotuloExpresoPrintModal
+        isOpen={rotuloExpresoModalOpen}
+        onClose={() => setRotuloExpresoModalOpen(false)}
+        pedido={pedidoForRemito || selectedPedido}
+        totalBultos={selectedPedido?.detalles?.length || 1}
+      />
+
+      {/* Modal Carga / Edición de Romaneo al Finalizar Pedido */}
+      <RomaneoEditorModal
+        isOpen={romaneoEditorOpen}
+        onClose={() => setRomaneoEditorOpen(false)}
+        tipo="pedido"
+        idEntidad={pedidoForRemito?.id || selectedPedido?.id || ''}
+        numeroReferencia={pedidoForRemito?.numero_pedido || selectedPedido?.numero_pedido || ''}
+        detallesArticulos={pedidoForRemito?.detalles || selectedPedido?.detalles || []}
+        onSuccess={onRefresh}
+      />
+
+      {/* Modal Impresión Etiqueta Brother LPN (29x62mm) al Finalizar Pedido */}
+      <BrotherLabelPrinterModal
+        isOpen={brotherLpnModalOpen}
+        onClose={() => setBrotherLpnModalOpen(false)}
+        nroPedido={pedidoForRemito?.numero_pedido || selectedPedido?.numero_pedido || 'PED-3611'}
+        clienteNombre={pedidoForRemito?.cliente?.razon_social || selectedPedido?.cliente?.razon_social || 'OPEN CARGO'}
+      />
+
+      {/* Modal de Hoja de Trabajo Operativa / Picking (A4) */}
+      <HojaTrabajoOperativaPrintModal
+        isOpen={hojaTrabajoOpen}
+        onClose={() => setHojaTrabajoOpen(false)}
+        pedido={pedidoForRemito || selectedPedido}
       />
     </div>
   );
