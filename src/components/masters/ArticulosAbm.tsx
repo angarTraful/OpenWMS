@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { Articulo } from '../../api/articulosApi';
 import { articulosApi } from '../../api/articulosApi';
+import { supabase } from '../../api/supabaseClient';
 import type { Cliente } from '../../api/clientesApi';
 import { ArticuloModal } from './ArticuloModal';
 import { ImportarMaestrosModal } from './ImportarMaestrosModal';
@@ -129,6 +130,22 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
 
   useEffect(() => {
     cargarArticulos();
+
+    // Suscripción en tiempo real a la tabla articulos en Supabase
+    const channel = supabase
+      .channel('realtime-articulos-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'articulos' },
+        () => {
+          cargarArticulos();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [clienteFilter]);
 
   const articulosFiltrados = useMemo(() => {
