@@ -17,11 +17,13 @@ import {
   Users,
   Filter,
   FilterX,
+  Upload,
 } from 'lucide-react';
 import type { Articulo } from '../../api/articulosApi';
 import { articulosApi } from '../../api/articulosApi';
 import type { Cliente } from '../../api/clientesApi';
 import { ArticuloModal } from './ArticuloModal';
+import { ImportarMaestrosModal } from './ImportarMaestrosModal';
 import { formatM3, formatNumber } from '../../lib/utils';
 import {
   SortableHeaderCell,
@@ -69,6 +71,7 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [articuloSeleccionado, setArticuloSeleccionado] = useState<Articulo | null>(null);
 
   // Feedback notification
@@ -462,6 +465,13 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#dab9ff]' : ''}`} />
           </button>
           <button
+            onClick={() => setImportModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-[#201f1f] hover:bg-[#2a2a2a] text-[#dab9ff] border border-[#522b7c] transition-colors shadow-sm"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Importar CSV</span>
+          </button>
+          <button
             onClick={handleCrearNuevo}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-[#dab9ff] hover:bg-[#eedbff] text-[#460283] transition-colors shadow-sm"
           >
@@ -774,6 +784,20 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
             msg: articuloSeleccionado
               ? 'Especificaciones del artículo actualizadas exitosamente.'
               : 'Nuevo artículo registrado en el catálogo del WMS.',
+          });
+        }}
+      />
+      {/* Modal Importación CSV */}
+      <ImportarMaestrosModal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        tipoEntidad="articulos"
+        onSuccess={() => {
+          cargarArticulos();
+          if (onRefreshParent) onRefreshParent();
+          setFeedback({
+            type: 'ok',
+            msg: 'Importación masiva de artículos completada exitosamente.',
           });
         }}
       />

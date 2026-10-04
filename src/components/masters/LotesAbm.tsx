@@ -17,10 +17,12 @@ import {
   Clock,
   Filter,
   FilterX,
+  Upload,
 } from 'lucide-react';
 import { lotesApi, LoteConCliente, LoteCliente } from '../../api/lotesApi';
 import type { Cliente } from '../../api/clientesApi';
 import { LoteModal } from './LoteModal';
+import { ImportarMaestrosModal } from './ImportarMaestrosModal';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 import {
   SortableHeaderCell,
@@ -64,6 +66,7 @@ export const LotesAbm: React.FC<LotesAbmProps> = ({
 
   // Modal Lote
   const [modalOpen, setModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [loteSeleccionado, setLoteSeleccionado] = useState<LoteCliente | null>(null);
 
   // Modal Motivo Bloqueo Rápido
@@ -397,6 +400,13 @@ export const LotesAbm: React.FC<LotesAbmProps> = ({
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
+            onClick={() => setImportModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#201f1f] hover:bg-[#2a2a2a] text-[#dab9ff] border border-[#522b7c] text-xs font-semibold transition-colors shadow-sm"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Importar CSV</span>
+          </button>
+          <button
             onClick={handleCrearNuevo}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#dab9ff] hover:bg-[#c99eff] text-[#460283] text-xs font-bold transition-all shadow-sm"
           >
@@ -698,6 +708,20 @@ export const LotesAbm: React.FC<LotesAbmProps> = ({
         onSuccess={() => {
           cargarLotes();
           if (onRefreshParent) onRefreshParent();
+        }}
+      />
+      {/* Modal Importación CSV */}
+      <ImportarMaestrosModal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        tipoEntidad="lotes"
+        onSuccess={() => {
+          cargarLotes();
+          if (onRefreshParent) onRefreshParent();
+          setFeedback({
+            type: 'ok',
+            msg: 'Importación masiva de lotes completada exitosamente.',
+          });
         }}
       />
     </div>

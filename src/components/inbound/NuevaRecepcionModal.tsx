@@ -605,8 +605,14 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
 
   if (!isOpen) return null;
 
+  const isFormDirty = Boolean(detalles.length > 0 || numeroRemito);
+
   return (
-    <ModalPortal>
+    <ModalPortal
+      onClose={onClose}
+      isDirty={isFormDirty}
+      confirmMessage="¿Está seguro de cerrar la ventana de recepción? Se perderán las líneas declaradas en el borrador."
+    >
       <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-fadeIn">
         <div className="bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] rounded-md max-w-4xl w-full max-h-[94vh] flex flex-col overflow-hidden shadow-2xl">
           {/* Modal Header */}

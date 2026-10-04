@@ -352,8 +352,14 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
 
   if (!isOpen) return null;
 
+  const isFormDirty = Boolean(articulosSeleccionados.length > 0 || numeroOrdenCliente);
+
   return (
-    <ModalPortal>
+    <ModalPortal
+      onClose={onClose}
+      isDirty={isFormDirty}
+      confirmMessage="¿Está seguro de cerrar el formulario del pedido? Se perderán las líneas de artículos agregadas al borrador."
+    >
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-[#131313]/80 backdrop-blur-sm animate-fade-in">
       <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-xl bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] shadow-2xl overflow-hidden text-slate-800 dark:text-[#e5e2e1]">
         

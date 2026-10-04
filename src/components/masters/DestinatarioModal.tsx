@@ -126,8 +126,14 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
     }
   };
 
+  const isFormDirty = Boolean(formData.razon_social || formData.direccion_entrega || formData.telefono);
+
   return (
-    <ModalPortal>
+    <ModalPortal
+      onClose={onClose}
+      isDirty={isFormDirty}
+      confirmMessage="¿Está seguro de cerrar la ventana de destinatario? Los datos ingresados no guardados se perderán."
+    >
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-[#131313]/85 backdrop-blur-sm animate-fadeIn">
       <div className="relative w-full max-w-lg rounded-md bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] shadow-2xl overflow-hidden text-slate-800 dark:text-[#e5e2e1] flex flex-col max-h-[92vh]">
         {/* Header */}

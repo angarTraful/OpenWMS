@@ -116,8 +116,14 @@ export const GeneradorUbicacionesModal: React.FC<GeneradorUbicacionesModalProps>
     }
   };
 
+  const isFormDirty = Boolean(previsualizacion.length > 0);
+
   return (
-    <ModalPortal>
+    <ModalPortal
+      onClose={onClose}
+      isDirty={isFormDirty}
+      confirmMessage="¿Está seguro de cerrar el generador de ubicaciones? Se perderán las coordenadas calculadas."
+    >
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-[#131313]/80 backdrop-blur-sm animate-fadeIn">
       <div className="relative w-full max-w-lg rounded-md bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] shadow-2xl overflow-hidden text-slate-800 dark:text-[#e5e2e1] flex flex-col">
         {/* Header */}

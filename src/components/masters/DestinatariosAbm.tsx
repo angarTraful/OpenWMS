@@ -15,9 +15,11 @@ import {
   Power,
   Filter,
   FilterX,
+  Upload,
 } from 'lucide-react';
 import { clientesApi, Destinatario, Cliente } from '../../api/clientesApi';
 import { DestinatarioModal } from './DestinatarioModal';
+import { ImportarMaestrosModal } from './ImportarMaestrosModal';
 import {
   SortableHeaderCell,
   ColumnFilterInput,
@@ -61,6 +63,7 @@ export const DestinatariosAbm: React.FC<DestinatariosAbmProps> = ({
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [destinatarioSeleccionado, setDestinatarioSeleccionado] = useState<Destinatario | null>(null);
 
   // Feedback Notification
@@ -371,6 +374,13 @@ export const DestinatariosAbm: React.FC<DestinatariosAbmProps> = ({
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
+            onClick={() => setImportModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#201f1f] hover:bg-[#2a2a2a] text-[#dab9ff] border border-[#522b7c] text-xs font-semibold transition-colors shadow-sm"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Importar CSV</span>
+          </button>
+          <button
             onClick={handleCrearNuevo}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#dab9ff] hover:bg-[#c99eff] text-[#460283] text-xs font-bold transition-all shadow-sm"
           >
@@ -616,6 +626,20 @@ export const DestinatariosAbm: React.FC<DestinatariosAbmProps> = ({
         onSuccess={() => {
           cargarDestinatarios();
           if (onRefreshParent) onRefreshParent();
+        }}
+      />
+      {/* Modal Importación CSV */}
+      <ImportarMaestrosModal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        tipoEntidad="destinatarios"
+        onSuccess={() => {
+          cargarDestinatarios();
+          if (onRefreshParent) onRefreshParent();
+          setFeedback({
+            type: 'ok',
+            msg: 'Importación masiva de destinatarios completada exitosamente.',
+          });
         }}
       />
     </div>

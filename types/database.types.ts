@@ -70,7 +70,8 @@ export type Database = {
           cantidad_por_pallet: number | null
           peso_gw: number | null
           medida_m3: number | null
-          factor_estiba: number | null
+          item_so: string | null
+          imagen_url: string | null
         }
         Insert: {
           activo?: boolean
@@ -101,6 +102,8 @@ export type Database = {
           peso_gw?: number | null
           medida_m3?: number | null
           factor_estiba?: number | null
+          item_so?: string | null
+          imagen_url?: string | null
         }
         Update: {
           activo?: boolean
@@ -131,6 +134,8 @@ export type Database = {
           peso_gw?: number | null
           medida_m3?: number | null
           factor_estiba?: number | null
+          item_so?: string | null
+          imagen_url?: string | null
         }
         Relationships: [
           {

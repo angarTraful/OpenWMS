@@ -16,10 +16,12 @@ import {
   Power,
   Filter,
   FilterX,
+  Upload,
 } from 'lucide-react';
 import type { Cliente } from '../../api/clientesApi';
 import { clientesApi } from '../../api/clientesApi';
 import { ClienteModal } from './ClienteModal';
+import { ImportarMaestrosModal } from './ImportarMaestrosModal';
 import {
   SortableHeaderCell,
   ColumnFilterInput,
@@ -56,6 +58,7 @@ export const ClientesAbm: React.FC<ClientesAbmProps> = ({ onRefreshParent }) => 
 
   // Modal
   const [modalOpen, setModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null);
 
   // Feedback notification
@@ -399,6 +402,13 @@ export const ClientesAbm: React.FC<ClientesAbmProps> = ({ onRefreshParent }) => 
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#dab9ff]' : ''}`} />
           </button>
           <button
+            onClick={() => setImportModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-[#201f1f] hover:bg-[#2a2a2a] text-[#dab9ff] border border-[#522b7c] transition-colors shadow-sm"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Importar CSV</span>
+          </button>
+          <button
             onClick={handleCrearNuevo}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-[#dab9ff] hover:bg-[#eedbff] text-[#460283] transition-colors shadow-sm"
           >
@@ -644,6 +654,20 @@ export const ClientesAbm: React.FC<ClientesAbmProps> = ({ onRefreshParent }) => 
             msg: clienteSeleccionado
               ? 'Datos del cliente actualizados exitosamente.'
               : 'Nuevo cliente registrado exitosamente en el sistema.',
+          });
+        }}
+      />
+      {/* Modal Importación CSV */}
+      <ImportarMaestrosModal
+        isOpen={importModalOpen}
+        onClose={() => setImportModalOpen(false)}
+        tipoEntidad="clientes"
+        onSuccess={() => {
+          cargarClientes();
+          if (onRefreshParent) onRefreshParent();
+          setFeedback({
+            type: 'ok',
+            msg: 'Importación masiva de clientes completada exitosamente.',
           });
         }}
       />

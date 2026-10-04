@@ -16,6 +16,18 @@ export function formatM3(val: number): string {
   return `${formatNumber(val, 2)} m³`;
 }
 
+/**
+ * Calcula el volumen M³ acumulado o efectivo aplicando el Factor de Estiba %.
+ * Si el factor de estiba es 0 (o <= 0), retorna el volumen directo (volumenBase * cantidad).
+ * Si el factor de estiba es > 0 (ej: 15%), suma ese % al volumen de almacenaje (volBase * (1 + factor/100)).
+ */
+export function calcularVolumenEstibado(volumenBaseM3: number, cantidad: number = 1, factorEstibaPercent: number = 0): number {
+  const volBase = (volumenBaseM3 || 0) * cantidad;
+  const factor = Number(factorEstibaPercent || 0);
+  if (factor <= 0) return volBase;
+  return volBase * (1 + factor / 100);
+}
+
 export function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '-';
   try {

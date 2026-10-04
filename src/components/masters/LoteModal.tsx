@@ -116,8 +116,14 @@ export const LoteModal: React.FC<LoteModalProps> = ({
     }
   };
 
+  const isFormDirty = Boolean(formData.numero_lote || formData.fecha_vencimiento);
+
   return (
-    <ModalPortal>
+    <ModalPortal
+      onClose={onClose}
+      isDirty={isFormDirty}
+      confirmMessage="¿Está seguro de cerrar la ventana de lote? Los datos ingresados no guardados se perderán."
+    >
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-[#131313]/85 backdrop-blur-sm animate-fadeIn">
       <div className="relative w-full max-w-md rounded-md bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] shadow-2xl overflow-hidden text-slate-800 dark:text-[#e5e2e1] flex flex-col">
         {/* Header */}

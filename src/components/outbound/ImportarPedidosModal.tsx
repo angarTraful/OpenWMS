@@ -449,8 +449,14 @@ export const ImportarPedidosModal: React.FC<ImportarPedidosModalProps> = ({
 
   if (!isOpen) return null;
 
+  const isFormDirty = Boolean(file || pedidosImportados.length > 0);
+
   return (
-    <ModalPortal>
+    <ModalPortal
+      onClose={onClose}
+      isDirty={isFormDirty}
+      confirmMessage="¿Está seguro de salir? Se perderán los pedidos parseados del archivo sin importar."
+    >
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/75 backdrop-blur-sm animate-fade-in">
       <div className="bg-white dark:bg-[#181717] border border-slate-200 dark:border-[#333333] rounded-xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden text-slate-800 dark:text-[#e5e2e1]">
         {/* Header */}

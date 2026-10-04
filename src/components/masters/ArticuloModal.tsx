@@ -314,8 +314,14 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
     }
   };
 
+  const isFormDirty = Boolean(idProducto || nombre || ean13);
+
   return (
-    <ModalPortal>
+    <ModalPortal
+      onClose={onClose}
+      isDirty={isFormDirty}
+      confirmMessage="¿Está seguro de cerrar la ficha de artículo? Los datos ingresados no guardados se perderán."
+    >
       <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-fadeIn">
         <div className="relative w-full max-w-3xl rounded-md bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] shadow-2xl overflow-hidden text-slate-800 dark:text-[#e5e2e1] flex flex-col max-h-[92vh]">
           {/* Header */}
