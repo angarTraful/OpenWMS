@@ -1,0 +1,342 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-page: #f8fafc;
+    --bg-card: #ffffff;
+    --bg-card-low: #f1f5f9;
+    --bg-card-high: #ffffff;
+    --border-color: #e2e8f0;
+    --border-variant: #cbd5e1;
+    --text-primary: #0f172a;
+    --text-muted: #64748b;
+    --color-primary: #7c3aed;
+    --color-on-primary: #ffffff;
+    color-scheme: light;
+  }
+
+  .dark {
+    --bg-page: #131313;
+    --bg-card: #201f1f;
+    --bg-card-low: #1c1b1b;
+    --bg-card-high: #2a2a2a;
+    --border-color: #333333;
+    --border-variant: #4b4452;
+    --text-primary: #e5e2e1;
+    --text-muted: #cdc3d4;
+    --color-primary: #dab9ff;
+    --color-on-primary: #460283;
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+    font-family: 'Hanken Grotesk', system-ui, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11", "tnum";
+    letter-spacing: -0.01em;
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.dark ::-webkit-scrollbar-track,
+::-webkit-scrollbar-track {
+  background: var(--bg-page);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #333333;
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #4b4452;
+}
+
+html:not(.dark) ::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+html:not(.dark) ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+html:not(.dark) ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Tabular numbers for logistic density */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   LIGHT MODE DESIGN SYSTEM - OPENWMS 3PL
+   High-contrast, elegant Slate & Royal Violet styling
+   ========================================================================== */
+html:not(.dark) {
+  /* Surfaces & Backgrounds */
+  .bg-\[\#131313\] {
+    background-color: #f8fafc !important;
+  }
+  .bg-\[\#0e0e0e\] {
+    background-color: #f1f5f9 !important;
+  }
+  .bg-\[\#121212\] {
+    background-color: #f8fafc !important;
+  }
+  .bg-\[\#161515\] {
+    background-color: #ffffff !important;
+  }
+  .bg-\[\#161515\]\/95 {
+    background-color: rgba(255, 255, 255, 0.95) !important;
+  }
+  .bg-\[\#181818\] {
+    background-color: #f8fafc !important;
+  }
+  .bg-\[\#1a1919\] {
+    background-color: #ffffff !important;
+  }
+  .bg-\[\#1a1919\]\/90 {
+    background-color: rgba(255, 255, 255, 0.95) !important;
+  }
+  .bg-\[\#1c1b1b\] {
+    background-color: #f8fafc !important;
+  }
+  .bg-\[\#1c1b1b\]\/90 {
+    background-color: rgba(248, 250, 252, 0.95) !important;
+  }
+  .bg-\[\#201f1f\] {
+    background-color: #ffffff !important;
+  }
+  .bg-\[\#201f1f\]\/90 {
+    background-color: rgba(255, 255, 255, 0.95) !important;
+  }
+  .bg-\[\#222121\] {
+    background-color: #f1f5f9 !important;
+  }
+  .bg-\[\#252424\] {
+    background-color: #f1f5f9 !important;
+  }
+  .bg-\[\#292929\] {
+    background-color: #e2e8f0 !important;
+  }
+  .bg-\[\#2a2a2a\] {
+    background-color: #e2e8f0 !important;
+  }
+
+  .bg-\[\#141414\] {
+    background-color: #f8fafc !important;
+  }
+  .bg-\[\#141313\] {
+    background-color: #f1f5f9 !important;
+  }
+  .bg-\[\#121111\] {
+    background-color: #ffffff !important;
+  }
+  .bg-\[\#171616\] {
+    background-color: #f8fafc !important;
+  }
+  .bg-\[\#181717\] {
+    background-color: #f1f5f9 !important;
+  }
+  .bg-\[\#28153c\] {
+    background-color: #ede9fe !important;
+  }
+  .bg-\[\#201330\] {
+    background-color: #f5f3ff !important;
+  }
+  .hover\:bg-\[\#2d1a45\]:hover {
+    background-color: #ede9fe !important;
+  }
+
+  /* Purple branding in light mode */
+  .bg-\[\#241138\] {
+    background-color: #f5f3ff !important;
+  }
+  .bg-\[\#201330\]\/90 {
+    background-color: rgba(245, 243, 255, 0.95) !important;
+  }
+  .bg-\[\#340066\] {
+    background-color: #7c3aed !important;
+  }
+  .bg-\[\#460283\] {
+    background-color: #6d28d9 !important;
+  }
+  .bg-\[\#dab9ff\] {
+    background-color: #7c3aed !important;
+    color: #ffffff !important;
+  }
+
+  /* Borders */
+  .border-\[\#333333\] {
+    border-color: #e2e8f0 !important;
+  }
+  .border-\[\#2d2c2c\] {
+    border-color: #e2e8f0 !important;
+  }
+  .border-\[\#292929\] {
+    border-color: #e2e8f0 !important;
+  }
+  .border-\[\#2e2d2d\] {
+    border-color: #e2e8f0 !important;
+  }
+  .border-\[\#4b4452\] {
+    border-color: #cbd5e1 !important;
+  }
+  .border-\[\#44424a\] {
+    border-color: #e2e8f0 !important;
+  }
+  .border-\[\#522b7c\] {
+    border-color: #ddd6fe !important;
+  }
+  .border-\[\#5a2e8c\] {
+    border-color: #ddd6fe !important;
+  }
+  .border-\[\#dab9ff\]\/60 {
+    border-color: rgba(124, 58, 237, 0.35) !important;
+  }
+  .border-\[\#dab9ff\]\/40 {
+    border-color: rgba(124, 58, 237, 0.25) !important;
+  }
+  .border-\[\#dab9ff\]\/30 {
+    border-color: rgba(124, 58, 237, 0.2) !important;
+  }
+  .border-\[\#dab9ff\]\/20 {
+    border-color: rgba(124, 58, 237, 0.15) !important;
+  }
+
+  /* Typography / Text colors */
+  .text-\[\#e5e2e1\] {
+    color: #0f172a !important; /* Deep Slate 900 */
+  }
+  .text-\[\#cdc3d4\] {
+    color: #475569 !important; /* Slate 600 */
+  }
+  .text-\[\#978d9d\] {
+    color: #64748b !important; /* Slate 500 */
+  }
+  .text-\[\#797280\] {
+    color: #94a3b8 !important; /* Slate 400 */
+  }
+  .text-\[\#666666\] {
+    color: #94a3b8 !important; /* Slate 400 */
+  }
+  .text-\[\#dab9ff\] {
+    color: #7c3aed !important; /* Royal Violet 600 */
+  }
+
+  /* Hover states */
+  .hover\:bg-\[\#201f1f\]:hover {
+    background-color: #f1f5f9 !important;
+  }
+  .hover\:bg-\[\#222121\]:hover {
+    background-color: #f1f5f9 !important;
+  }
+  .hover\:bg-\[\#252424\]:hover {
+    background-color: #e2e8f0 !important;
+  }
+  .hover\:bg-\[\#2a2a2a\]:hover {
+    background-color: #e2e8f0 !important;
+  }
+  .hover\:bg-\[\#1c1b1b\]:hover {
+    background-color: #f8fafc !important;
+  }
+  .hover\:bg-\[\#181818\]:hover {
+    background-color: #f1f5f9 !important;
+  }
+  .hover\:border-\[\#4b4452\]:hover {
+    border-color: #94a3b8 !important;
+  }
+  .hover\:border-\[\#dab9ff\]\/40:hover {
+    border-color: rgba(124, 58, 237, 0.45) !important;
+  }
+  .hover\:text-\[\#e5e2e1\]:hover {
+    color: #0f172a !important;
+  }
+  .hover\:text-\[\#dab9ff\]:hover {
+    color: #6d28d9 !important;
+  }
+  .hover\:text-\[\#eedbff\]:hover {
+    color: #4c1d95 !important;
+  }
+
+  /* Modals backdrop & Cards elevation */
+  .bg-black\/60,
+  .bg-black\/70,
+  .bg-black\/80 {
+    background-color: rgba(15, 23, 42, 0.45) !important;
+    backdrop-filter: blur(6px);
+  }
+
+  /* Form inputs & Selects */
+  select,
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea {
+    color: #0f172a;
+    border-color: #e2e8f0;
+  }
+
+  select option {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  ::placeholder {
+    color: #94a3b8 !important;
+  }
+
+  /* Table striping, headers, and footers in Light Mode */
+  table thead,
+  table thead tr {
+    background-color: #f1f5f9 !important;
+    border-color: #e2e8f0 !important;
+  }
+  table thead th {
+    background-color: #f1f5f9 !important;
+    color: #334155;
+    border-color: #e2e8f0 !important;
+  }
+  table tfoot,
+  table tfoot tr {
+    background-color: #f8fafc !important;
+    border-color: #e2e8f0 !important;
+  }
+  table tfoot td {
+    background-color: #f8fafc !important;
+    border-color: #e2e8f0 !important;
+  }
+  table td {
+    color: #0f172a;
+    border-color: #f1f5f9;
+  }
+  tr.hover\:bg-\[\#201f1f\]\/40:hover,
+  tr.hover\:bg-\[\#201f1f\]\/50:hover,
+  tr.hover\:bg-\[\#201f1f\]:hover,
+  tr.hover\:bg-\[\#252424\]:hover,
+  tr.hover\:bg-\[\#1c1b1b\]:hover {
+    background-color: #f8fafc !important;
+  }
+
+  /* Elevation Shadows in Light Mode */
+  .shadow-xl {
+    box-shadow: 0 4px 14px -2px rgba(15, 23, 42, 0.07), 0 2px 6px -2px rgba(15, 23, 42, 0.04) !important;
+  }
+  .shadow-2xl {
+    box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.09), 0 8px 12px -6px rgba(15, 23, 42, 0.05) !important;
+  }
+  .shadow-md {
+    box-shadow: 0 2px 8px -1px rgba(15, 23, 42, 0.06), 0 1px 3px -1px rgba(15, 23, 42, 0.04) !important;
+  }
+  .shadow-xs {
+    box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.05) !important;
+  }
+}
