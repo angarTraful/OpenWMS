@@ -17,15 +17,15 @@ export function formatM3(val: number): string {
 }
 
 /**
- * Calcula el volumen M³ acumulado o efectivo aplicando el Factor de Estiba %.
- * Si el factor de estiba es 0 (o <= 0), retorna el volumen directo (volumenBase * cantidad).
- * Si el factor de estiba es > 0 (ej: 15%), suma ese % al volumen de almacenaje (volBase * (1 + factor/100)).
+ * Calcula el volumen M³ efectivo para saneamiento de cubaje: m3_art + (FE * m3_art).
+ * Se utiliza para ajustar diferencias temporales con el cliente hasta lograr sincronía en 0%.
+ * Ej: Si m3_art = 0.045 y FE = 10 (10%), el volumen saneado = 0.045 + (0.10 * 0.045) = 0.0495 m³.
  */
 export function calcularVolumenEstibado(volumenBaseM3: number, cantidad: number = 1, factorEstibaPercent: number = 0): number {
-  const volBase = (volumenBaseM3 || 0) * cantidad;
-  const factor = Number(factorEstibaPercent || 0);
-  if (factor <= 0) return volBase;
-  return volBase * (1 + factor / 100);
+  const m3_art = (volumenBaseM3 || 0) * cantidad;
+  const fe = Number(factorEstibaPercent || 0) / 100;
+  if (fe <= 0) return m3_art;
+  return m3_art + (fe * m3_art);
 }
 
 export function formatDate(dateStr: string | null | undefined): string {

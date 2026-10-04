@@ -1,0 +1,36 @@
+Aquí tienes el detalle claro de los Campos Requeridos (Obligatorios) y Campos Opcionales según la base de datos y la API para cada entidad:
+
+1. 🏢 Clientes 3PL (clientes)
+Requeridos (Obligatorios):
+codigo: Código o ID propio del cliente depositante (ej: 100, CLI-001).
+razon_social: Nombre comercial o razón social completa.
+Opcionales:
+identificacion_fiscal (CUIT / RUT), email_contacto, telefono, direccion, unidad_negocio (Rubro/Clasificación).
+2. 📦 Artículos & SKUs (articulos)
+Requeridos (Obligatorios):
+cliente_id (o codigo_cliente en el CSV): Cliente depositante dueño del producto.
+sku (o id_producto): Código único de artículo/producto.
+nombre: Nombre o denominación del producto.
+Opcionales:
+descripcion, categoria_id, subcategoria_id, marca_bulto, ean13 (Código de barras), tipo_empaque, unidad_medida (default: 'bulto'), unidades_por_bulto (default: 1), cantidad_por_pallet (default: 40), peso_gw (default: 0), medida_m3 (default: 0), factor_estiba (default: 0), item_so, imagen_url, rotacion_abc (default: 'B').
+3. 📍 Destinatarios / Sucursales (destinatarios)
+Requeridos (Obligatorios):
+cliente_id (o codigo_cliente en el CSV): Cliente al que pertenece el punto de entrega.
+razon_social: Nombre del destinatario / sucursal.
+direccion_entrega: Dirección física de entrega.
+Opcionales:
+codigo_sucursal, ciudad, provincia, telefono, contacto_recepcion, ventana_horaria_entrega.
+4. 🏷️ Lotes & Vencimientos (lotes_cliente)
+Requeridos (Obligatorios):
+cliente_id (o codigo_cliente en el CSV): Cliente depositante.
+numero_lote: Identificador o número del lote de fabricación.
+Opcionales:
+fecha_fabricacion, fecha_vencimiento, motivo_bloqueo, bloqueado (default: false).
+5. 📍 Ubicaciones del Almacén (ubicaciones)
+Requeridos (Obligatorios):
+almacen_id: Almacén físico donde se ubica.
+zona_id: Zona dentro del almacén (ej: almacenamiento, picking, recepciones).
+codigo_etiqueta: Nombre o coordenadas de la ubicación (ej: PAS-01-RACK-02-NIV-03-POS-01).
+Opcionales:
+pasillo, estante, nivel, posicion, capacidad_peso_kg, capacidad_volumen_m3, permite_mezcla_clientes (default: false), estado (default: 'libre').
+6:50 PM

@@ -107,7 +107,7 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
   // 4. Métricas Físicas y Logísticas
   const [pesoGw, setPesoGw] = useState<number>(1.0); // PesoGW (Kg)
   const [medidaM3, setMedidaM3] = useState<number>(0.045); // MedidaM3 (M3)
-  const [factorEstiba, setFactorEstiba] = useState<number>(100); // Factor Estiba %
+  const [factorEstiba, setFactorEstiba] = useState<number>(0); // Factor Estiba % (0% por defecto)
 
   // Parámetros auxiliares existentes
   const [rotacionAbc, setRotacionAbc] = useState<'A' | 'B' | 'C'>('B');
@@ -163,7 +163,7 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
         setMedidaM3(
           Number((articulo as any).medida_m3) || Number(articulo.volumen_unitario_m3) || 0
         );
-        setFactorEstiba(Number((articulo as any).factor_estiba) ?? 100);
+        setFactorEstiba(Number((articulo as any).factor_estiba) ?? 0);
 
         setRotacionAbc((articulo.rotacion_abc as any) || 'B');
         setValorDeclarado(Number(articulo.valor_declarado) || 0);
@@ -188,7 +188,7 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
 
         setPesoGw(1.0);
         setMedidaM3(0.045);
-        setFactorEstiba(100);
+        setFactorEstiba(0);
 
         setRotacionAbc('B');
         setValorDeclarado(0);
