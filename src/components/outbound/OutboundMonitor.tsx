@@ -39,7 +39,7 @@ import {
   Barcode,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
-import { formatDate, formatDateTime, formatNumber, formatM3, compressImage } from '@/lib/utils';
+import { formatDate, formatDateTime, formatNumber, formatM3 } from '@/lib/utils';
 import { pedidosApi } from '@/api/pedidosApi';
 import { despachosApi } from '@/api/despachosApi';
 import { calcularEtasRuta } from '@/lib/etaService';
@@ -2069,10 +2069,15 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                           const file = e.target.files?.[0];
                           if (file) {
                             try {
-                              const b64 = await compressImage(file);
-                              setFotoAdjuntoBase64(b64);
-                            } catch (err) {
-                              console.error('Error comprimiendo imagen:', err);
+                              const res = await subirDocumentoAGoogleDrive({ file, folder: 'Remitos_Conformados' });
+                              if (res.success && res.url) {
+                                setFotoAdjuntoBase64(res.url);
+                              } else {
+                                alert('Error al subir documento a Google Drive: ' + (res.error || 'Error desconocido'));
+                              }
+                            } catch (err: any) {
+                              console.error('Error al subir a Google Drive:', err);
+                              alert('Error al subir a Google Drive: ' + err.message);
                             }
                           }
                         }}

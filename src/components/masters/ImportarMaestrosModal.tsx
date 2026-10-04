@@ -39,8 +39,9 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [dbClientes, setDbClientes] = useState<Cliente[]>(clientesProp);
+  const [dbCategorias, setDbCategorias] = useState<any[]>([]);
 
-  // Asegurar que tengamos la lista actualizada de clientes de Supabase para vincular por código
+  // Asegurar que tengamos la lista actualizada de clientes y categorías para vincular por código/nombre
   useEffect(() => {
     if (isOpen) {
       if (clientesProp.length > 0) {
@@ -52,6 +53,12 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
           console.warn('No se pudieron obtener clientes para vincular:', err);
         });
       }
+
+      articulosApi.listarCategorias(false).then((cats) => {
+        setDbCategorias(cats || []);
+      }).catch((err) => {
+        console.warn('No se pudieron obtener categorías para vincular:', err);
+      });
     }
   }, [isOpen, clientesProp]);
 
@@ -65,7 +72,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
     },
     articulos: {
       titulo: 'Importar Catálogo de Artículos & SKUs (CSV)',
-      desc: 'Subida masiva de SKUs, unidades por bulto/rollo, unidad de medida, pesos y volumen M³.',
+      desc: 'Subida masiva de SKUs, marcas, unidades por bulto, pesos GW, medida M³ y factor de estiba.',
       templateName: 'plantilla_articulos_skus.csv',
     },
     destinatarios: {
@@ -91,8 +98,8 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
       headers = 'codigo,razon_social,identificacion_fiscal,email_contacto,telefono,direccion,unidad_negocio';
       exampleRow = '100,LBH HOME & HOTEL S.A.,30-71149359-6,info@lbh.com,5491160000000,Tucuman 2025 CIUDAD AUTONOMA BUENOS AIRES,Art. Blanqueria';
     } else if (tipoFinal === 'articulos') {
-      headers = 'codigo_cliente,sku,nombre,unidades_por_bulto,unidad_medida,peso_unitario_kg,volumen_unitario_m3,rotacion_abc,codigo_barras';
-      exampleRow = '100,ART-1001,Acolchado Gris 2 Plazas,50.0,mts,12.5,0.045,B,7791234567890';
+      headers = 'id_producto,codigo_cliente,sku,nombre,descripcion,categoria,subcategoria,marca_bulto,ean13,tipo_empaque,unidad_medida,unidades_por_bulto,cantidad_por_pallet,peso_gw,medida_m3,factor_estiba,item_so,color,rotacion_abc';
+      exampleRow = 'PROD-1001,100,ART-1001,Acolchado Gris 2 Plazas,Acolchado microfibra termico,Textil,Dormitorio,POSTO BLANCO,7791234567890,caja,mts,50.0,40,12.5,0.045,0,SO-99281,Gris,B';
     } else if (tipoFinal === 'destinatarios') {
       headers = 'codigo_cliente,codigo_sucursal,razon_social,direccion_entrega,ciudad,telefono,contacto_recepcion';
       exampleRow = '100,SUC-01,Sucursal Central Palermo,Av. Santa Fe 3200,Buenos Aires,+541148889900,Juan Perez';
@@ -133,18 +140,35 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
           return;
         }
 
-        const firstLineCols = lines[0].split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
-        
+        // Detectar delimitador (punto y coma ';', coma ',', o tabulación '\t')
+        const firstLine = lines[0];
+        const countSemicolons = (firstLine.match(/;/g) || []).length;
+        const countCommas = (firstLine.match(/,/g) || []).length;
+        const countTabs = (firstLine.match(/\t/g) || []).length;
+
+        let delimiter = ',';
+        if (countSemicolons >= countCommas && countSemicolons >= countTabs && countSemicolons > 0) {
+          delimiter = ';';
+        } else if (countTabs > countCommas && countTabs > 0) {
+          delimiter = '\t';
+        }
+
+        const splitLine = (line: string) =>
+          line.split(delimiter).map((c) => c.trim().replace(/^"|"$/g, ''));
+
+        const firstLineCols = splitLine(lines[0]);
+
         // Detectar si la primera fila es encabezado o fila de datos
-        // Si el primer valor es un número (ej. "100") o no parece nombre de columna, es un archivo sin encabezados
-        const firstCol = firstLineCols[0].toLowerCase();
-        const hasHeader = !(/^\d+$/.test(firstCol)) && (
-          firstCol.includes('codigo') ||
-          firstCol.includes('sku') ||
-          firstCol.includes('razon') ||
-          firstCol.includes('nombre') ||
-          firstCol.includes('cuit')
-        );
+        const firstCol = (firstLineCols[0] || '').toLowerCase();
+        const hasHeader =
+          !/^\d+$/.test(firstCol) &&
+          (firstCol.includes('codigo') ||
+            firstCol.includes('sku') ||
+            firstCol.includes('razon') ||
+            firstCol.includes('nombre') ||
+            firstCol.includes('id_producto') ||
+            firstCol.includes('id') ||
+            firstCol.includes('cuit'));
 
         let headers: string[] = [];
         let startIndex = 0;
@@ -157,8 +181,8 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
         const dataRows: any[] = [];
 
         for (let i = startIndex; i < lines.length; i++) {
-          const cols = lines[i].split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
-          if (cols.length >= 2) {
+          const cols = splitLine(lines[i]);
+          if (cols.length >= 1 && cols.some((c) => c !== '')) {
             const rowObj: Record<string, any> = { _rawCols: cols };
 
             if (hasHeader) {
@@ -233,7 +257,11 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
           creadosCount++;
         }
       } else if (tipoFinal === 'articulos') {
+        let rowIdx = 0;
+        const erroresRows: string[] = [];
+
         for (const row of parsedRows) {
+          rowIdx++;
           const raw = row._rawCols || [];
 
           // Resolver cliente_id buscando por código depositante o usando el primero disponible
@@ -245,21 +273,89 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
             throw new Error('No hay clientes registrados en el sistema para asociar los artículos.');
           }
 
-          const idProdVal = (row.id_producto || row.id_art || row.id_prod || '').toString().trim() || undefined;
-          const skuVal = (row.sku || row.codigo || raw[1] || `SKU-${Math.floor(1000 + Math.random() * 9000)}`).toString().trim();
+          const parseNum = (val: any, defaultVal = 0) => {
+            if (val === undefined || val === null || val === '') return defaultVal;
+            const str = val.toString().replace('%', '').replace(',', '.').trim();
+            const num = Number(str);
+            return isNaN(num) ? defaultVal : num;
+          };
+
+          const idProdVal = (row.id_producto || row.id_art || row.id_prod || raw[0] || '').toString().trim() || undefined;
+          const rawSku = (row.sku || row.codigo || raw[1] || '').toString().trim();
+          const skuBase = rawSku || idProdVal || `ART-${rowIdx}`;
           const nombreVal = (row.nombre || row.nombre_producto || row.descripcion || raw[2] || 'Artículo Sin Nombre').toString().trim();
           const descVal = (row.descripcion || '').toString().trim() || undefined;
+          const colorVal = (row.color || '').toString().trim() || undefined;
           const marcaVal = (row.marca_bulto || row.marca || '').toString().trim() || undefined;
           const ean13Val = (row.ean13 || row.codigo_barras || row.ean || raw[8] || '').toString().trim() || undefined;
           const empaqueVal = (row.tipo_empaque || row.tipoempaque || '').toString().trim() || undefined;
-          const unxBulto = Number(row.unidades_por_bulto || row.unidadesxbulto || raw[3] || 1) || 1;
+          const unxBulto = parseNum(row.unidades_por_bulto || row.unidadesxbulto || raw[3], 1);
           const umVal = (row.unidad_medida || row.unidadmedida || row.um || raw[4] || 'bulto').toString().trim();
-          const cantXPallet = Number(row.cantidad_por_pallet || row.cantidadxpallet || 0) || undefined;
-          const pesoGwVal = Number(row.peso_gw || row.pesogw || row.peso_unitario_kg || raw[5] || 0) || 0;
-          const volM3Val = Number(row.medida_m3 || row.medidam3 || row.volumen_unitario_m3 || raw[6] || 0) || 0;
-          const factorEstibaVal = Number(row.factor_estiba || row.factorestiba || 0) || undefined;
+          const cantXPallet = parseNum(row.cantidad_por_pallet || row.cantidadxpallet, 0) || undefined;
+          const pesoGwVal = parseNum(row.peso_gw || row.pesogw || row.peso_unitario_kg || raw[5], 0);
+          const volM3Val = parseNum(row.medida_m3 || row.medidam3 || row.volumen_unitario_m3 || raw[6], 0);
+          const factorEstibaVal = parseNum(row.factor_estiba || row.factorestiba, 0);
           const itemSoVal = (row.item_so || row.itemso || '').toString().trim() || undefined;
           const imgUrlVal = (row.imagen_url || row.imagen || '').toString().trim() || undefined;
+
+          // Resolver Categoria y Subcategoria (Auto-creando dinámicamente si no existen)
+          let catIdFound: string | undefined = undefined;
+          let subcatIdFound: string | undefined = undefined;
+
+          const catInputRaw = (row.categoria || row.categoria_codigo || '').toString().trim();
+          if (catInputRaw) {
+            const catLower = catInputRaw.toLowerCase();
+            let catMatched = dbCategorias.find(
+              (c) => c.codigo?.toLowerCase() === catLower || c.nombre?.toLowerCase().includes(catLower)
+            );
+
+            if (!catMatched) {
+              try {
+                const newCatCode = catInputRaw.substring(0, 10).toUpperCase().replace(/\s+/g, '-');
+                const createdCat = await articulosApi.crearCategoria({
+                  codigo: newCatCode,
+                  nombre: catInputRaw,
+                  activo: true,
+                });
+                catMatched = { ...createdCat, subcategorias: [] };
+                dbCategorias.push(catMatched);
+              } catch (catErr) {
+                console.warn(`No se pudo auto-crear categoría '${catInputRaw}':`, catErr);
+              }
+            }
+
+            if (catMatched) {
+              catIdFound = catMatched.id;
+              const subcatInputRaw = (row.subcategoria || row.subcategoria_codigo || '').toString().trim();
+              if (subcatInputRaw) {
+                const subLower = subcatInputRaw.toLowerCase();
+                let subMatched = (catMatched.subcategorias || []).find(
+                  (s: any) => s.codigo?.toLowerCase() === subLower || s.nombre?.toLowerCase().includes(subLower)
+                );
+
+                if (!subMatched) {
+                  try {
+                    const newSubCode = subcatInputRaw.substring(0, 10).toUpperCase().replace(/\s+/g, '-');
+                    const createdSub = await articulosApi.crearSubcategoria({
+                      categoria_id: catMatched.id,
+                      codigo: newSubCode,
+                      nombre: subcatInputRaw,
+                      activo: true,
+                    });
+                    subMatched = createdSub;
+                    if (!catMatched.subcategorias) catMatched.subcategorias = [];
+                    catMatched.subcategorias.push(subMatched);
+                  } catch (subErr) {
+                    console.warn(`No se pudo auto-crear subcategoría '${subcatInputRaw}':`, subErr);
+                  }
+                }
+
+                if (subMatched) {
+                  subcatIdFound = subMatched.id;
+                }
+              }
+            }
+          }
 
           let rotacionVal: 'A' | 'B' | 'C' = 'B';
           const rotCandidate = (row.rotacion_abc || row.rotacion || raw[7] || 'B').toString().toUpperCase();
@@ -267,11 +363,14 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
             rotacionVal = rotCandidate as 'A' | 'B' | 'C';
           }
 
-          await articulosApi.crearArticulo({
+          const articlePayload = {
             cliente_id: targetClienteId,
-            sku: skuVal,
+            sku: skuBase,
             nombre: nombreVal,
             descripcion: descVal,
+            color: colorVal,
+            categoria_id: catIdFound,
+            subcategoria_id: subcatIdFound,
             unidades_por_bulto: unxBulto,
             unidad_medida: umVal,
             peso_unitario_kg: pesoGwVal,
@@ -289,8 +388,34 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
             item_so: itemSoVal,
             imagen_url: imgUrlVal,
             activo: true,
-          });
-          creadosCount++;
+          };
+
+          try {
+            await articulosApi.crearArticulo(articlePayload);
+            creadosCount++;
+          } catch (rowErr: any) {
+            // Si viola clave única por SKU duplicado en el mismo cliente, reintentar con SKU derivado único
+            if (rowErr.message?.includes('duplicate key') || rowErr.message?.includes('articulos_cliente_sku_uk')) {
+              try {
+                const fallbackSku = `${skuBase}-${idProdVal || rowIdx}`;
+                await articulosApi.crearArticulo({
+                  ...articlePayload,
+                  sku: fallbackSku,
+                });
+                creadosCount++;
+              } catch (retryErr: any) {
+                console.warn(`Fila ${rowIdx} omitida por duplicado:`, retryErr);
+                erroresRows.push(`Fila ${rowIdx} (${nombreVal}): SKU o ID de producto duplicado.`);
+              }
+            } else {
+              console.warn(`Fila ${rowIdx} falló:`, rowErr);
+              erroresRows.push(`Fila ${rowIdx} (${nombreVal}): ${rowErr.message}`);
+            }
+          }
+        }
+
+        if (erroresRows.length > 0 && creadosCount === 0) {
+          throw new Error(`Error en la importación: ${erroresRows[0]}`);
         }
       } else if (tipoFinal === 'destinatarios') {
         for (const row of parsedRows) {

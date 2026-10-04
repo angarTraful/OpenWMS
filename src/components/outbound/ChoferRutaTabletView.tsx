@@ -44,34 +44,7 @@ interface ChoferRutaTabletViewProps {
   almacenes?: any[];
 }
 
-// Utilidad para comprimir fotos tomadas con la cámara de la tablet
-function compressImage(file: File, maxWidth = 1200, quality = 0.75): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return resolve(e.target?.result as string);
-        ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', quality));
-      };
-      img.onerror = reject;
-      img.src = e.target?.result as string;
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
+
 
 export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
   initialRutaId,
@@ -228,7 +201,7 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
     isDrawing.current = false;
   };
 
-  // Manejo de carga de foto con la cámara de la tablet
+  // Manejo de carga de foto con la cámara de la tablet (se sube directamente a Google Drive)
   const handlePhotoCapture = async (
     e: React.ChangeEvent<HTMLInputElement>,
     setTarget: (val: string | null) => void
@@ -236,11 +209,16 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const compressed = await compressImage(file, 1200, 0.75);
-      setTarget(compressed);
-      rfSoundService.playBeep();
-    } catch (err) {
-      console.error('Error al procesar foto:', err);
+      const res = await subirDocumentoAGoogleDrive({ file, folder: 'Remitos_Conformados' });
+      if (res.success && res.url) {
+        setTarget(res.url);
+        rfSoundService.playBeep();
+      } else {
+        alert('Error al subir la imagen a Google Drive: ' + (res.error || 'Error desconocido'));
+      }
+    } catch (err: any) {
+      console.error('Error al subir foto a Google Drive:', err);
+      alert('Error al conectar con Google Drive: ' + err.message);
     }
   };
 
