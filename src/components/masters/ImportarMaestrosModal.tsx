@@ -40,8 +40,9 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [dbClientes, setDbClientes] = useState<Cliente[]>(clientesProp);
   const [dbCategorias, setDbCategorias] = useState<any[]>([]);
+  const [dbSubcategorias, setDbSubcategorias] = useState<any[]>([]);
 
-  // Asegurar que tengamos la lista actualizada de clientes y categorías para vincular por código/nombre
+  // Asegurar que tengamos la lista actualizada de clientes, categorías y subcategorías
   useEffect(() => {
     if (isOpen) {
       if (clientesProp.length > 0) {
@@ -58,6 +59,12 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
         setDbCategorias(cats || []);
       }).catch((err) => {
         console.warn('No se pudieron obtener categorías para vincular:', err);
+      });
+
+      articulosApi.listarSubcategorias(false).then((subs) => {
+        setDbSubcategorias(subs || []);
+      }).catch((err) => {
+        console.warn('No se pudieron obtener subcategorías para vincular:', err);
       });
     }
   }, [isOpen, clientesProp]);
@@ -313,10 +320,11 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
             return (clean.substring(0, 15) || `${prefix}-${Math.floor(100 + Math.random() * 900)}`);
           };
 
-          // Resolver Categoria y Subcategoria (Auto-creando dinámicamente si no existen)
+          // Resolver Categoria y Subcategoria de forma independiente
           let catIdFound: string | undefined = undefined;
           let subcatIdFound: string | undefined = undefined;
 
+          // 1. Categoría
           const catInputRaw = (row.categoria || row.categoria_codigo || '').toString().trim();
           if (catInputRaw) {
             const catLower = catInputRaw.toLowerCase();
@@ -335,14 +343,13 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
                     activo: true,
                   });
                 } catch (dupCatErr) {
-                  // Retry con sufijo único
                   createdCat = await articulosApi.crearCategoria({
                     codigo: `${newCatCode}-${Math.floor(100 + Math.random() * 900)}`,
                     nombre: catInputRaw,
                     activo: true,
                   });
                 }
-                catMatched = { ...createdCat, subcategorias: [] };
+                catMatched = createdCat;
                 dbCategorias.push(catMatched);
               } catch (catErr) {
                 console.warn(`No se pudo auto-crear categoría '${catInputRaw}':`, catErr);
@@ -351,45 +358,45 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
 
             if (catMatched) {
               catIdFound = catMatched.id;
-              const subcatInputRaw = (row.subcategoria || row.subcategoria_codigo || '').toString().trim();
-              if (subcatInputRaw) {
-                const subLower = subcatInputRaw.toLowerCase();
-                let subMatched = (catMatched.subcategorias || []).find(
-                  (s: any) => s.codigo?.toLowerCase() === subLower || s.nombre?.toLowerCase().includes(subLower)
-                );
+            }
+          }
 
-                if (!subMatched) {
-                  try {
-                    const newSubCode = generateCodeSlug(subcatInputRaw, 'SUB');
-                    let createdSub;
-                    try {
-                      createdSub = await articulosApi.crearSubcategoria({
-                        categoria_id: catMatched.id,
-                        codigo: newSubCode,
-                        nombre: subcatInputRaw,
-                        activo: true,
-                      });
-                    } catch (dupSubErr) {
-                      // Retry con sufijo único en caso de colisión (código de error 23505)
-                      createdSub = await articulosApi.crearSubcategoria({
-                        categoria_id: catMatched.id,
-                        codigo: `${newSubCode}-${Math.floor(100 + Math.random() * 900)}`,
-                        nombre: subcatInputRaw,
-                        activo: true,
-                      });
-                    }
-                    subMatched = createdSub;
-                    if (!catMatched.subcategorias) catMatched.subcategorias = [];
-                    catMatched.subcategorias.push(subMatched);
-                  } catch (subErr) {
-                    console.warn(`No se pudo auto-crear subcategoría '${subcatInputRaw}':`, subErr);
-                  }
-                }
+          // 2. Subcategoría (Independiente)
+          const subcatInputRaw = (row.subcategoria || row.subcategoria_codigo || '').toString().trim();
+          if (subcatInputRaw) {
+            const subLower = subcatInputRaw.toLowerCase();
+            let subMatched = dbSubcategorias.find(
+              (s) => s.codigo?.toLowerCase() === subLower || s.nombre?.toLowerCase().includes(subLower)
+            );
 
-                if (subMatched) {
-                  subcatIdFound = subMatched.id;
+            if (!subMatched) {
+              try {
+                const newSubCode = generateCodeSlug(subcatInputRaw, 'SUB');
+                let createdSub;
+                try {
+                  createdSub = await articulosApi.crearSubcategoria({
+                    categoria_id: catIdFound || undefined,
+                    codigo: newSubCode,
+                    nombre: subcatInputRaw,
+                    activo: true,
+                  });
+                } catch (dupSubErr) {
+                  createdSub = await articulosApi.crearSubcategoria({
+                    categoria_id: catIdFound || undefined,
+                    codigo: `${newSubCode}-${Math.floor(100 + Math.random() * 900)}`,
+                    nombre: subcatInputRaw,
+                    activo: true,
+                  });
                 }
+                subMatched = createdSub;
+                dbSubcategorias.push(subMatched);
+              } catch (subErr) {
+                console.warn(`No se pudo auto-crear subcategoría '${subcatInputRaw}':`, subErr);
               }
+            }
+
+            if (subMatched) {
+              subcatIdFound = subMatched.id;
             }
           }
 

@@ -203,7 +203,15 @@ export const articulosApi = {
     return data;
   },
 
-  async crearSubcategoria(subcategoria: SubcategoriaInsert): Promise<Subcategoria> {
+  async listarSubcategorias(soloActivas = true): Promise<Subcategoria[]> {
+    let query = supabase.from('subcategorias_articulos').select('*').order('nombre', { ascending: true });
+    if (soloActivas) query = query.eq('activo', true);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  },
+
+  async crearSubcategoria(subcategoria: Partial<SubcategoriaInsert> & { codigo: string; nombre: string }): Promise<Subcategoria> {
     const { data, error } = await supabase
       .from('subcategorias_articulos')
       .insert({
