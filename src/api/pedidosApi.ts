@@ -12,6 +12,7 @@ export const pedidosApi = {
         *,
         cliente:clientes(id, razon_social),
         destinatario:destinatarios(id, razon_social, direccion_entrega, ciudad),
+        almacen_origen:almacenes(id, nombre, codigo, direccion),
         detalles:pedidos_detalle(id, cantidad_solicitada, cantidad_reservada, cantidad_separada, articulo_id)
       `)
       .order('fecha_solicitud', { ascending: false });
@@ -29,6 +30,7 @@ export const pedidosApi = {
         *,
         cliente:clientes(*),
         destinatario:destinatarios(*),
+        almacen_origen:almacenes(*),
         detalles:pedidos_detalle(
           *,
           articulo:articulos(*),

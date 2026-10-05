@@ -14,12 +14,15 @@ import {
   UserCheck,
   Zap,
   Upload,
+  Truck,
+  Warehouse,
 } from 'lucide-react';
 import { formatM3, formatNumber } from '@/lib/utils';
 import { articulosApi, Articulo } from '@/api/articulosApi';
 import { clientesApi } from '@/api/clientesApi';
 import { pedidosApi } from '@/api/pedidosApi';
 import { inventarioApi } from '@/api/inventarioApi';
+import { almacenApi, Almacen } from '@/api/almacenApi';
 import { QuickSelect } from '@/components/ui/QuickSelect';
 import { DestinatarioModal } from '@/components/masters/DestinatarioModal';
 import { ArticuloModal } from '@/components/masters/ArticuloModal';
@@ -52,6 +55,9 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
   // Form Header State
   const [clienteId, setClienteId] = useState<string>('');
   const [destinatarioId, setDestinatarioId] = useState<string>('');
+  const [modalidadEntrega, setModalidadEntrega] = useState<'envio_domicilio' | 'retiro_deposito'>('envio_domicilio');
+  const [almacenOrigenId, setAlmacenOrigenId] = useState<string>('');
+  const [almacenes, setAlmacenes] = useState<Almacen[]>([]);
   const [numeroPedido, setNumeroPedido] = useState<string>('');
   const [ordenCompraCliente, setOrdenCompraCliente] = useState<string>('');
   const [prioridad, setPrioridad] = useState<'normal' | 'urgente' | 'baja'>('normal');
@@ -96,6 +102,17 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
       setFastPasteOpen(false);
       setFastPasteFeedback(null);
       setRenglones([]);
+      setModalidadEntrega('envio_domicilio');
+
+      // Cargar almacenes para retiro pick-up
+      almacenApi.listarAlmacenes(true).then((alms) => {
+        setAlmacenes(alms || []);
+        if (alms && alms.length > 0) {
+          setAlmacenOrigenId(alms[0].id);
+        }
+      }).catch((err) => {
+        console.warn('Error cargando almacenes:', err);
+      });
     }
   }, [isOpen, defaultClienteId, clientes]);
 
@@ -297,8 +314,12 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
       setErrorMsg('Debe seleccionar un Cliente depositante.');
       return;
     }
-    if (!destinatarioId) {
-      setErrorMsg('Debe seleccionar un Destinatario o Sucursal de entrega.');
+    if (modalidadEntrega === 'envio_domicilio' && !destinatarioId) {
+      setErrorMsg('Debe seleccionar un Destinatario o Sucursal de entrega para el envío.');
+      return;
+    }
+    if (modalidadEntrega === 'retiro_deposito' && !almacenOrigenId) {
+      setErrorMsg('Debe seleccionar el almacén/depósito donde retira el cliente.');
       return;
     }
     if (!numeroPedido.trim()) {
@@ -326,7 +347,9 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
       await pedidosApi.crearPedido(
         {
           cliente_id: clienteId,
-          destinatario_id: destinatarioId,
+          destinatario_id: modalidadEntrega === 'envio_domicilio' ? destinatarioId : (destinatarioId || null),
+          almacen_origen_id: almacenOrigenId || null,
+          modalidad_entrega: modalidadEntrega,
           numero_pedido: numeroPedido.trim(),
           orden_compra_cliente: ordenCompraCliente.trim() || null,
           prioridad: prioridad as any,
@@ -399,58 +422,127 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
           )}
 
           {/* Section: Client & Destination */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-xl bg-slate-50/80 dark:bg-[#201f1f] border border-slate-200 dark:border-[#333333]">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1.5">
-                Cliente Depositante *
-              </label>
-              <select
-                value={clienteId}
-                onChange={(e) => setClienteId(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-[#dab9ff]"
-                disabled={clientes.length === 0}
-              >
-                {clientes.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    [{c.codigo}] {c.razon_social}
-                  </option>
-                ))}
-              </select>
+          <div className="space-y-3 p-4 rounded-xl bg-slate-50/80 dark:bg-[#201f1f] border border-slate-200 dark:border-[#333333]">
+            {/* Selector de Modalidad: Envío vs Retiro Pick-up */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-[#333333]">
+              <div className="text-xs font-semibold text-slate-700 dark:text-[#cdc3d4]">
+                Modalidad de Salida / Entrega:
+              </div>
+              <div className="flex items-center gap-1.5 p-1 rounded-lg bg-slate-200/70 dark:bg-[#131313] border border-slate-300 dark:border-[#333333]">
+                <button
+                  type="button"
+                  onClick={() => setModalidadEntrega('envio_domicilio')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                    modalidadEntrega === 'envio_domicilio'
+                      ? 'bg-white dark:bg-[#28153c] text-violet-700 dark:text-[#dab9ff] shadow-sm border border-slate-200 dark:border-[#6b21a8]'
+                      : 'text-slate-600 dark:text-[#cdc3d4] hover:text-slate-900 dark:hover:text-[#e5e2e1]'
+                  }`}
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  <span>Envío con Flete / Reparto</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalidadEntrega('retiro_deposito')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all ${
+                    modalidadEntrega === 'retiro_deposito'
+                      ? 'bg-white dark:bg-[#142e1d] text-emerald-700 dark:text-[#78d492] shadow-sm border border-slate-200 dark:border-[#2a683b]'
+                      : 'text-slate-600 dark:text-[#cdc3d4] hover:text-slate-900 dark:hover:text-[#e5e2e1]'
+                  }`}
+                >
+                  <Warehouse className="w-3.5 h-3.5" />
+                  <span>🏢 Retira el Cliente (Pick-up)</span>
+                </button>
+              </div>
             </div>
 
-            <div>
-              <QuickSelect
-                label="Destinatario / Sucursal de Entrega"
-                required
-                value={destinatarioId}
-                onChange={setDestinatarioId}
-                placeholder={destinatarios.length === 0 ? 'No hay destinatarios registrados' : 'Seleccionar sucursal de entrega...'}
-                addNewLabel="+ Agregar nuevo destinatario/sucursal"
-                onAddNew={() => setModalDestinatarioOpen(true)}
-                disabled={loadingCatalogos}
-                options={destinatarios.map((d) => ({
-                  value: d.id,
-                  label: d.razon_social,
-                  sublabel: d.ciudad || d.direccion_entrega,
-                }))}
-              />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1.5">
+                  Cliente Depositante *
+                </label>
+                <select
+                  value={clienteId}
+                  onChange={(e) => setClienteId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-[#dab9ff]"
+                  disabled={clientes.length === 0}
+                >
+                  {clientes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      [{c.codigo}] {c.razon_social}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {modalidadEntrega === 'envio_domicilio' ? (
+                <div>
+                  <QuickSelect
+                    label="Destinatario / Sucursal de Entrega"
+                    required
+                    value={destinatarioId}
+                    onChange={setDestinatarioId}
+                    placeholder={
+                      destinatarios.length === 0
+                        ? 'No hay sucursales/destinatarios habilitados'
+                        : 'Seleccionar sucursal de entrega...'
+                    }
+                    addNewLabel="+ Agregar nuevo destinatario/sucursal"
+                    onAddNew={() => setModalDestinatarioOpen(true)}
+                    disabled={loadingCatalogos}
+                    options={destinatarios.map((d) => ({
+                      value: d.id,
+                      label: `${d.razon_social}${d.es_sucursal_propia ? ' [Sucursal Propia]' : ''}`,
+                      sublabel: `${d.ciudad || d.direccion_entrega}${
+                        d.codigo_sucursal ? ` • Cód: ${d.codigo_sucursal}` : ''
+                      }`,
+                    }))}
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1.5 flex items-center gap-1.5">
+                    <Warehouse className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>Almacén / Depósito de Retiro *</span>
+                  </label>
+                  <select
+                    value={almacenOrigenId}
+                    onChange={(e) => setAlmacenOrigenId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-[#131313] border border-emerald-300 dark:border-emerald-700/50 text-sm text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 cursor-pointer"
+                  >
+                    {almacenes.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.nombre} {a.direccion ? `(${a.direccion})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1.5">
+                  Prioridad de Preparación
+                </label>
+                <select
+                  value={prioridad}
+                  onChange={(e) => setPrioridad(e.target.value as any)}
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-[#dab9ff]"
+                >
+                  <option value="normal">Normal (Estándar)</option>
+                  <option value="urgente">⚡ Urgente (Prioridad Alta)</option>
+                  <option value="baja">Baja (Sin urgencia)</option>
+                </select>
+              </div>
             </div>
 
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1.5">
-                Prioridad de Preparación
-              </label>
-              <select
-                value={prioridad}
-                onChange={(e) => setPrioridad(e.target.value as any)}
-                className="w-full px-3 py-2 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-[#dab9ff]"
-              >
-                <option value="normal">Normal (Estándar)</option>
-                <option value="urgente">⚡ Urgente (Prioridad Alta)</option>
-                <option value="baja">Baja (Sin urgencia)</option>
-              </select>
-            </div>
+            {modalidadEntrega === 'retiro_deposito' && (
+              <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+                <Warehouse className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>
+                  <strong>Retira el Cliente en Planta:</strong> La mercadería se preparará para retiro por mostrador/muelle del depósito asignado. No se rutea en camión de reparto.
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Section: Operational Reference */}

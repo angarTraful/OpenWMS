@@ -37,6 +37,7 @@ import {
   User,
   Cloud,
   Barcode,
+  Warehouse,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { formatDate, formatDateTime, formatNumber, formatM3 } from '@/lib/utils';
@@ -624,6 +625,17 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                                 {ped.numero_pedido}
                               </span>
                               {getStatusBadge(ped.estado)}
+                              {ped.modalidad_entrega === 'retiro_deposito' ? (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-[#142e1d] dark:text-[#78d492] dark:border-[#2a683b] inline-flex items-center gap-1">
+                                  <Warehouse className="w-3 h-3" />
+                                  Pick-up Depósito
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-50 text-sky-800 border border-sky-200 dark:bg-[#0f2534] dark:text-[#75d1ff] dark:border-[#1b435d] inline-flex items-center gap-1">
+                                  <Truck className="w-3 h-3" />
+                                  Flete
+                                </span>
+                              )}
                               {ped.prioridad === 'urgente' && (
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-[#381015] dark:text-[#ffb4ab] dark:border-[#690005]">
                                   ⚡ URGENTE
@@ -644,9 +656,22 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                                 return null;
                               })()}
                             </div>
-                            <p className="text-xs text-slate-500 dark:text-[#cdc3d4] font-medium mt-0.5">
-                              Cliente: <b className="text-slate-800 dark:text-[#e5e2e1]">{ped.cliente?.razon_social || '-'}</b>
-                            </p>
+                            <div className="flex flex-wrap items-center gap-x-2 text-xs text-slate-500 dark:text-[#cdc3d4] font-medium mt-0.5">
+                              <span>
+                                Cliente: <b className="text-slate-800 dark:text-[#e5e2e1]">{ped.cliente?.razon_social || '-'}</b>
+                              </span>
+                              {ped.modalidad_entrega === 'retiro_deposito' ? (
+                                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
+                                  • Retira en: {ped.almacen_origen?.nombre || 'Depósito SSD'}
+                                </span>
+                              ) : (
+                                ped.destinatario?.razon_social && (
+                                  <span className="text-slate-600 dark:text-[#cdc3d4]">
+                                    • Destino: <b>{ped.destinatario.razon_social}</b> ({ped.destinatario.ciudad || 'Entrega'})
+                                  </span>
+                                )
+                              )}
+                            </div>
                           </div>
 
                           <div className="text-right">
@@ -781,8 +806,20 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                 {/* Modal Header */}
                 <div className="p-4 bg-slate-50 dark:bg-[#201f1f] border-b border-slate-200 dark:border-[#333333] flex items-center justify-between flex-shrink-0">
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-[#e5e2e1] flex items-center gap-2">
-                      Detalle y Tareas: <span className="font-mono text-violet-700 dark:text-[#dab9ff]">{selectedPedido.numero_pedido}</span>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-[#e5e2e1] flex flex-wrap items-center gap-2">
+                      <span>Detalle y Tareas:</span>
+                      <span className="font-mono text-violet-700 dark:text-[#dab9ff]">{selectedPedido.numero_pedido}</span>
+                      {selectedPedido.modalidad_entrega === 'retiro_deposito' ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-[#142e1d] dark:text-[#78d492] dark:border dark:border-[#2a683b] inline-flex items-center gap-1">
+                          <Warehouse className="w-3 h-3" />
+                          Retiro Pick-up ({selectedPedido.almacen_origen?.nombre || 'Depósito SSD'})
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800 dark:bg-[#0f2534] dark:text-[#75d1ff] dark:border dark:border-[#1b435d] inline-flex items-center gap-1">
+                          <Truck className="w-3 h-3" />
+                          Envío ({selectedPedido.destinatario?.razon_social || 'Reparto'})
+                        </span>
+                      )}
                     </h3>
                     <p className="text-[11px] text-slate-500 dark:text-[#cdc3d4]">
                       Renglones solicitados y tareas de picking asignadas

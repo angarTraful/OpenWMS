@@ -230,12 +230,60 @@ export type Database = {
         }
         Relationships: []
       }
+      clientes_destinatarios: {
+        Row: {
+          activo: boolean
+          actualizado_en: string
+          alias_cliente: string | null
+          cliente_id: string
+          creado_en: string
+          destinatario_id: string
+          es_sucursal_propia: boolean
+          id: string
+        }
+        Insert: {
+          activo?: boolean
+          actualizado_en?: string
+          alias_cliente?: string | null
+          cliente_id: string
+          creado_en?: string
+          destinatario_id: string
+          es_sucursal_propia?: boolean
+          id?: string
+        }
+        Update: {
+          activo?: boolean
+          actualizado_en?: string
+          alias_cliente?: string | null
+          cliente_id?: string
+          creado_en?: string
+          destinatario_id?: string
+          es_sucursal_propia?: boolean
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clientes_destinatarios_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clientes_destinatarios_destinatario_id_fkey"
+            columns: ["destinatario_id"]
+            isOneToOne: false
+            referencedRelation: "destinatarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       destinatarios: {
         Row: {
           activo: boolean
           actualizado_en: string
           ciudad: string | null
-          cliente_id: string
+          cliente_id: string | null
           codigo_sucursal: string | null
           contacto_recepcion: string | null
           creado_en: string
@@ -249,7 +297,7 @@ export type Database = {
           activo?: boolean
           actualizado_en?: string
           ciudad?: string | null
-          cliente_id: string
+          cliente_id?: string | null
           codigo_sucursal?: string | null
           contacto_recepcion?: string | null
           creado_en?: string
@@ -263,7 +311,7 @@ export type Database = {
           activo?: boolean
           actualizado_en?: string
           ciudad?: string | null
-          cliente_id?: string
+          cliente_id?: string | null
           codigo_sucursal?: string | null
           contacto_recepcion?: string | null
           creado_en?: string
@@ -988,13 +1036,15 @@ export type Database = {
       pedidos: {
         Row: {
           actualizado_en: string
+          almacen_origen_id: string | null
           cliente_id: string
           creado_en: string
-          destinatario_id: string
+          destinatario_id: string | null
           estado: Database["public"]["Enums"]["estado_pedido_enum"]
           fecha_compromiso_entrega: string | null
           fecha_solicitud: string
           id: string
+          modalidad_entrega: "envio_domicilio" | "retiro_deposito"
           numero_pedido: string
           observaciones: string | null
           orden_compra_cliente: string | null
@@ -1002,13 +1052,15 @@ export type Database = {
         }
         Insert: {
           actualizado_en?: string
+          almacen_origen_id?: string | null
           cliente_id: string
           creado_en?: string
-          destinatario_id: string
+          destinatario_id?: string | null
           estado?: Database["public"]["Enums"]["estado_pedido_enum"]
           fecha_compromiso_entrega?: string | null
           fecha_solicitud?: string
           id?: string
+          modalidad_entrega?: "envio_domicilio" | "retiro_deposito"
           numero_pedido: string
           observaciones?: string | null
           orden_compra_cliente?: string | null
@@ -1016,13 +1068,15 @@ export type Database = {
         }
         Update: {
           actualizado_en?: string
+          almacen_origen_id?: string | null
           cliente_id?: string
           creado_en?: string
-          destinatario_id?: string
+          destinatario_id?: string | null
           estado?: Database["public"]["Enums"]["estado_pedido_enum"]
           fecha_compromiso_entrega?: string | null
           fecha_solicitud?: string
           id?: string
+          modalidad_entrega?: "envio_domicilio" | "retiro_deposito"
           numero_pedido?: string
           observaciones?: string | null
           orden_compra_cliente?: string | null
@@ -1041,6 +1095,13 @@ export type Database = {
             columns: ["destinatario_id"]
             isOneToOne: false
             referencedRelation: "destinatarios"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pedidos_almacen_origen_id_fkey"
+            columns: ["almacen_origen_id"]
+            isOneToOne: false
+            referencedRelation: "almacenes"
             referencedColumns: ["id"]
           },
         ]
@@ -1092,7 +1153,7 @@ export type Database = {
           cae_o_autorizacion_fiscal: string | null
           cliente_id: string
           creado_en: string
-          destinatario_id: string
+          destinatario_id: string | null
           estado: Database["public"]["Enums"]["estado_remito_enum"]
           fecha_emision: string
           id: string
@@ -1109,7 +1170,7 @@ export type Database = {
           cae_o_autorizacion_fiscal?: string | null
           cliente_id: string
           creado_en?: string
-          destinatario_id: string
+          destinatario_id?: string | null
           estado?: Database["public"]["Enums"]["estado_remito_enum"]
           fecha_emision?: string
           id?: string
@@ -1126,7 +1187,7 @@ export type Database = {
           cae_o_autorizacion_fiscal?: string | null
           cliente_id?: string
           creado_en?: string
-          destinatario_id?: string
+          destinatario_id?: string | null
           estado?: Database["public"]["Enums"]["estado_remito_enum"]
           fecha_emision?: string
           id?: string

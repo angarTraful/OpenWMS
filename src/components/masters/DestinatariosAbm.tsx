@@ -138,13 +138,18 @@ export const DestinatariosAbm: React.FC<DestinatariosAbmProps> = ({
         const ciudad = (dest.ciudad || '').toLowerCase();
         const contacto = (dest.contacto_recepcion || '').toLowerCase();
         const clienteRazon = (dest.cliente?.razon_social || '').toLowerCase();
+        const habilitadosStr = (dest.clientes_habilitados || [])
+          .map((ch: any) => `${ch.cliente?.razon_social || ''} ${ch.cliente?.codigo || ''}`)
+          .join(' ')
+          .toLowerCase();
         const matchesGlobal =
           razon.includes(term) ||
           suc.includes(term) ||
           dir.includes(term) ||
           ciudad.includes(term) ||
           contacto.includes(term) ||
-          clienteRazon.includes(term);
+          clienteRazon.includes(term) ||
+          habilitadosStr.includes(term);
         if (!matchesGlobal) return false;
       }
 
@@ -153,7 +158,11 @@ export const DestinatariosAbm: React.FC<DestinatariosAbmProps> = ({
         const fCli = columnFilters.cliente.toLowerCase();
         const cli = (dest.cliente?.razon_social || '').toLowerCase();
         const cod = (dest.cliente?.codigo || '').toLowerCase();
-        if (!cli.includes(fCli) && !cod.includes(fCli)) return false;
+        const habilitados = (dest.clientes_habilitados || [])
+          .map((ch: any) => `${ch.cliente?.razon_social || ''} ${ch.cliente?.codigo || ''}`)
+          .join(' ')
+          .toLowerCase();
+        if (!cli.includes(fCli) && !cod.includes(fCli) && !habilitados.includes(fCli)) return false;
       }
       if (columnFilters.razon_social.trim()) {
         const fRazon = columnFilters.razon_social.toLowerCase();
@@ -504,15 +513,55 @@ export const DestinatariosAbm: React.FC<DestinatariosAbmProps> = ({
               ) : (
                 paginatedDestinatarios.map((dest) => (
                   <tr key={dest.id} className="hover:bg-[#201f1f] transition-colors">
-                    {/* Cliente */}
+                    {/* Cliente / Habilitaciones */}
                     <td className="py-1.5 px-2.5 font-medium text-xs text-[#e5e2e1]">
-                      <div className="flex items-center gap-1.5">
-                        <Building2 className="w-3.5 h-3.5 text-[#dab9ff]" />
-                        <span>{dest.cliente?.razon_social || 'Cliente'}</span>
-                      </div>
-                      <span className="text-[10px] font-mono text-[#978d9d]">
-                        {dest.cliente?.codigo}
-                      </span>
+                      {dest.clientes_habilitados && dest.clientes_habilitados.length > 0 ? (
+                        <div className="space-y-1">
+                          {dest.es_sucursal_propia || dest.clientes_habilitados.some((c: any) => c.es_sucursal_propia) ? (
+                            <div>
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                                🔒 Sucursal Propia
+                              </span>
+                              <div className="text-[11px] font-medium text-[#e5e2e1] mt-0.5">
+                                {dest.clientes_habilitados[0]?.cliente?.razon_social || dest.cliente?.razon_social}
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <div className="flex flex-wrap items-center gap-1">
+                                {dest.clientes_habilitados.slice(0, 2).map((ch: any) => (
+                                  <span
+                                    key={ch.id}
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-[#28153c] text-[#dab9ff] border border-[#522b7c] font-medium"
+                                  >
+                                    [{ch.cliente?.codigo || 'CLI'}] {ch.cliente?.razon_social}
+                                  </span>
+                                ))}
+                                {dest.clientes_habilitados.length > 2 && (
+                                  <span
+                                    title={dest.clientes_habilitados.map((c: any) => c.cliente?.razon_social).join(', ')}
+                                    className="px-1.5 py-0.5 rounded text-[10px] bg-[#2a2a2a] text-[#cdc3d4] border border-[#333333] cursor-help"
+                                  >
+                                    +{dest.clientes_habilitados.length - 2} más
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ) : dest.cliente ? (
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <Building2 className="w-3.5 h-3.5 text-[#dab9ff]" />
+                            <span>{dest.cliente.razon_social}</span>
+                          </div>
+                          <span className="text-[10px] font-mono text-[#978d9d]">
+                            [{dest.cliente.codigo}]
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-[#978d9d] italic">Global / Todos</span>
+                      )}
                     </td>
 
                     {/* Sucursal / Razón Social */}

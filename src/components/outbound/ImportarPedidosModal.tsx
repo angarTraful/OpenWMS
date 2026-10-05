@@ -259,6 +259,7 @@ export const ImportarPedidosModal: React.FC<ImportarPedidosModalProps> = ({
         let destResolvedId: string | undefined;
         if (destIden) {
           const matchedDest = clientDests.find((d: any) =>
+            d.codigo_sucursal?.toLowerCase() === destIden.toLowerCase() ||
             d.codigo?.toLowerCase() === destIden.toLowerCase() ||
             d.cuit?.toLowerCase() === destIden.toLowerCase() ||
             d.razon_social?.toLowerCase().includes(destIden.toLowerCase())

@@ -476,16 +476,19 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
           const telVal = (row.telefono || raw[5] || '').toString().trim() || undefined;
           const contactoVal = (row.contacto_recepcion || row.contacto || raw[6] || '').toString().trim() || undefined;
 
-          await clientesApi.crearDestinatario({
-            cliente_id: targetClienteId,
-            codigo_sucursal: codSucursal,
-            razon_social: razonSoc,
-            direccion_entrega: dirEntrega,
-            ciudad: ciudadVal,
-            telefono: telVal,
-            contacto_recepcion: contactoVal,
-            activo: true,
-          });
+          await clientesApi.crearDestinatario(
+            {
+              cliente_id: targetClienteId,
+              codigo_sucursal: codSucursal,
+              razon_social: razonSoc,
+              direccion_entrega: dirEntrega,
+              ciudad: ciudadVal,
+              telefono: telVal,
+              contacto_recepcion: contactoVal,
+              activo: true,
+            },
+            [targetClienteId]
+          );
           creadosCount++;
         }
       } else if (tipoFinal === 'lotes') {

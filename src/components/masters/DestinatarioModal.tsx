@@ -24,7 +24,11 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
 }) => {
   const isEditing = Boolean(destinatario);
 
+  // Cliente titular principal (o primer seleccionado)
   const [clienteId, setClienteId] = useState('');
+  const [selectedClienteIds, setSelectedClienteIds] = useState<string[]>([]);
+  const [esSucursalPropia, setEsSucursalPropia] = useState(false);
+
   const [razonSocial, setRazonSocial] = useState('');
   const [codigoSucursal, setCodigoSucursal] = useState('');
   const [direccionEntrega, setDireccionEntrega] = useState('');
@@ -41,6 +45,21 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
     if (isOpen) {
       if (destinatario) {
         setClienteId(destinatario.cliente_id || '');
+        // Extraer los clientes habilitados si vienen en el objeto
+        const habilitados = (destinatario.clientes_habilitados || []).map((ch) => ch.cliente_id);
+        if (habilitados.length > 0) {
+          setSelectedClienteIds(habilitados);
+        } else if (destinatario.cliente_id) {
+          setSelectedClienteIds([destinatario.cliente_id]);
+        } else {
+          setSelectedClienteIds([]);
+        }
+
+        const esPropia =
+          destinatario.es_sucursal_propia ??
+          Boolean(destinatario.clientes_habilitados?.some((ch) => ch.es_sucursal_propia));
+        setEsSucursalPropia(esPropia);
+
         setRazonSocial(destinatario.razon_social || '');
         setCodigoSucursal(destinatario.codigo_sucursal || '');
         setDireccionEntrega(destinatario.direccion_entrega || '');
@@ -50,7 +69,11 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
         setVentanaHoraria(destinatario.ventana_horaria_entrega || '');
         setActivo(destinatario.activo ?? true);
       } else {
-        setClienteId(defaultClienteId || (clientes[0]?.id ?? ''));
+        const initCliId = defaultClienteId || (clientes[0]?.id ?? '');
+        setClienteId(initCliId);
+        setSelectedClienteIds(initCliId ? [initCliId] : []);
+        setEsSucursalPropia(false);
+
         setRazonSocial('');
         setCodigoSucursal('');
         setDireccionEntrega('');
@@ -66,10 +89,28 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
 
   if (!isOpen) return null;
 
+  const toggleCliente = (cId: string) => {
+    setSelectedClienteIds((prev) =>
+      prev.includes(cId) ? prev.filter((id) => id !== cId) : [...prev, cId]
+    );
+  };
+
+  const handleSelectAllClientes = () => {
+    setSelectedClienteIds(clientes.map((c) => c.id));
+  };
+
+  const handleDeselectAllClientes = () => {
+    setSelectedClienteIds([]);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clienteId) {
-      setErrorMsg('Debe seleccionar el cliente depositante titular.');
+    if (esSucursalPropia && !clienteId) {
+      setErrorMsg('Debe seleccionar el cliente depositante titular de la sucursal propia.');
+      return;
+    }
+    if (!esSucursalPropia && selectedClienteIds.length === 0) {
+      setErrorMsg('Debe habilitar este destinatario para al menos un cliente depositante.');
       return;
     }
     if (!razonSocial.trim()) {
@@ -85,9 +126,12 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
     setErrorMsg(null);
 
     try {
+      const finalClienteIds = esSucursalPropia ? (clienteId ? [clienteId] : []) : selectedClienteIds;
+      const primaryClienteId = esSucursalPropia ? clienteId : (finalClienteIds[0] || null);
+
       if (isEditing && destinatario) {
         const cambios: DestinatarioUpdate = {
-          cliente_id: clienteId,
+          cliente_id: primaryClienteId,
           razon_social: razonSocial.trim(),
           codigo_sucursal: codigoSucursal.trim() || null,
           direccion_entrega: direccionEntrega.trim(),
@@ -98,11 +142,16 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
           activo,
           actualizado_en: new Date().toISOString(),
         };
-        const updated = await clientesApi.actualizarDestinatario(destinatario.id, cambios);
+        const updated = await clientesApi.actualizarDestinatario(
+          destinatario.id,
+          cambios,
+          finalClienteIds,
+          esSucursalPropia
+        );
         if (onCreated) onCreated(updated);
       } else {
         const nuevo: DestinatarioInsert = {
-          cliente_id: clienteId,
+          cliente_id: primaryClienteId,
           razon_social: razonSocial.trim(),
           codigo_sucursal: codigoSucursal.trim() || null,
           direccion_entrega: direccionEntrega.trim(),
@@ -112,7 +161,11 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
           ventana_horaria_entrega: ventanaHoraria.trim() || null,
           activo,
         };
-        const created = await clientesApi.crearDestinatario(nuevo);
+        const created = await clientesApi.crearDestinatario(
+          nuevo,
+          finalClienteIds,
+          esSucursalPropia
+        );
         if (onCreated) onCreated(created);
       }
 
@@ -126,7 +179,7 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
     }
   };
 
-  const isFormDirty = Boolean(formData.razon_social || formData.direccion_entrega || formData.telefono);
+  const isFormDirty = Boolean(razonSocial || direccionEntrega || telefono);
 
   return (
     <ModalPortal
@@ -168,24 +221,118 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
             </div>
           )}
 
-          {/* Cliente titular */}
-          <div>
-            <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
-              Cliente Depositante Titular <span className="text-rose-500 dark:text-[#ffb4ab]">*</span>
-            </label>
-            <select
-              value={clienteId}
-              onChange={(e) => setClienteId(e.target.value)}
-              disabled={isEditing}
-              className="w-full px-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff] disabled:opacity-60 cursor-pointer"
-            >
-              <option value="">Seleccionar cliente...</option>
-              {clientes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.razon_social} ({c.codigo})
-                </option>
-              ))}
-            </select>
+          {/* Tipo de Destino: Sucursal Propia vs Boca de Entrega Compartida */}
+          <div className="p-3 rounded-lg border border-slate-200 dark:border-[#333333] bg-slate-50/70 dark:bg-[#201f1f] space-y-3">
+            <div className="flex items-start gap-2.5">
+              <input
+                type="checkbox"
+                id="check-sucursal-propia"
+                checked={esSucursalPropia}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setEsSucursalPropia(val);
+                  if (val && clienteId) {
+                    setSelectedClienteIds([clienteId]);
+                  }
+                }}
+                className="mt-0.5 w-4 h-4 rounded text-violet-600 dark:text-[#dab9ff] border-slate-300 dark:border-[#444] focus:ring-0 cursor-pointer"
+              />
+              <label htmlFor="check-sucursal-propia" className="cursor-pointer select-none">
+                <span className="block text-xs font-bold text-slate-900 dark:text-[#e5e2e1]">
+                  Es sucursal o depósito propio del cliente
+                </span>
+                <span className="block text-[11px] text-slate-500 dark:text-[#cdc3d4]">
+                  Si está marcado, solo será visible para el cliente titular (ideal para envíos inter-sucursales).
+                </span>
+              </label>
+            </div>
+
+            {esSucursalPropia ? (
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
+                  Cliente Titular de la Sucursal <span className="text-rose-500 dark:text-[#ffb4ab]">*</span>
+                </label>
+                <select
+                  value={clienteId}
+                  onChange={(e) => {
+                    setClienteId(e.target.value);
+                    if (e.target.value) setSelectedClienteIds([e.target.value]);
+                  }}
+                  className="w-full px-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff] cursor-pointer"
+                >
+                  <option value="">Seleccionar cliente titular...</option>
+                  {clientes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      [{c.codigo}] {c.razon_social}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase">
+                    Clientes Habilitados para Despachar Aquí <span className="text-rose-500 dark:text-[#ffb4ab]">*</span>
+                  </label>
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllClientes}
+                      className="text-violet-600 dark:text-[#dab9ff] hover:underline font-semibold"
+                    >
+                      Habilitar todos
+                    </button>
+                    <span className="text-slate-300 dark:text-[#444]">|</span>
+                    <button
+                      type="button"
+                      onClick={handleDeselectAllClientes}
+                      className="text-slate-500 dark:text-[#cdc3d4] hover:underline"
+                    >
+                      Desmarcar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="max-h-36 overflow-y-auto p-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] space-y-1.5">
+                  {clientes.map((c) => {
+                    const isChecked = selectedClienteIds.includes(c.id);
+                    return (
+                      <label
+                        key={c.id}
+                        className={`flex items-center justify-between px-2.5 py-1.5 rounded cursor-pointer transition-colors ${
+                          isChecked
+                            ? 'bg-violet-50 dark:bg-[#201330] text-violet-900 dark:text-[#dab9ff]'
+                            : 'hover:bg-slate-50 dark:hover:bg-[#1c1b1b] text-slate-700 dark:text-[#cdc3d4]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleCliente(c.id)}
+                            className="w-3.5 h-3.5 rounded text-violet-600 dark:text-[#dab9ff] border-slate-300 dark:border-[#444] focus:ring-0 cursor-pointer"
+                          />
+                          <span className="text-xs font-medium">
+                            <span className="font-mono text-[11px] text-slate-400 dark:text-slate-500 mr-1.5">
+                              [{c.codigo}]
+                            </span>
+                            {c.razon_social}
+                          </span>
+                        </div>
+                        {isChecked && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-200/60 dark:bg-[#522b7c]/40 font-semibold">
+                            Habilitado
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-500 dark:text-[#cdc3d4] mt-1">
+                  En el portal y bot solo verán este destinatario los clientes con casilla marcada.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Razón Social & Código Sucursal */}

@@ -69,22 +69,30 @@ export const AsignarRutaModal: React.FC<AsignarRutaModalProps> = ({
       setChoferDocumento('');
       setChoferTelefono('');
 
-      // Pre-select prepared orders if available
+      // Pre-select prepared orders if available (excluyendo retiros en planta / pick-up)
       const prepIds = pedidosDisponibles
-        .filter((p) => p.estado === 'preparado' || p.estado === 'agrupado_salida')
+        .filter(
+          (p) =>
+            p.modalidad_entrega !== 'retiro_deposito' &&
+            (p.estado === 'preparado' || p.estado === 'agrupado_salida')
+        )
         .map((p) => p.id);
       setSelectedPedidosIds(prepIds);
     }
   }, [isOpen, almacenes, pedidosDisponibles]);
 
+  const pedidosParaRuta = useMemo(() => {
+    return pedidosDisponibles.filter((p) => p.modalidad_entrega !== 'retiro_deposito');
+  }, [pedidosDisponibles]);
+
   // Update stops order whenever selected orders change
   useEffect(() => {
-    const pedidosMap = new Map(pedidosDisponibles.map((p) => [p.id, p]));
+    const pedidosMap = new Map(pedidosParaRuta.map((p) => [p.id, p]));
     const paradas = selectedPedidosIds
       .map((id) => pedidosMap.get(id))
       .filter(Boolean);
     setParadasOrdenadas(paradas);
-  }, [selectedPedidosIds, pedidosDisponibles]);
+  }, [selectedPedidosIds, pedidosParaRuta]);
 
   const togglePedidoSelection = (id: string) => {
     setSelectedPedidosIds((prev) =>
@@ -362,7 +370,7 @@ export const AsignarRutaModal: React.FC<AsignarRutaModalProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-[#333333]">
-                    {pedidosDisponibles.map((ped) => {
+                    {pedidosParaRuta.map((ped) => {
                       const isSelected = selectedPedidosIds.includes(ped.id);
                       return (
                         <tr
