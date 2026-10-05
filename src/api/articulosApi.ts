@@ -66,7 +66,8 @@ export const articulosApi = {
         categoria:categorias_articulos(id, nombre),
         subcategoria:subcategorias_articulos(id, nombre)
       `)
-      .order('sku', { ascending: true });
+      .order('sku', { ascending: true })
+      .range(0, 49999);
 
     if (params?.clienteId) {
       query = query.eq('cliente_id', params.clienteId);

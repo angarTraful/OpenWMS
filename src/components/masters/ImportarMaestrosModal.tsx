@@ -130,7 +130,10 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const text = event.target?.result as string;
+        let text = event.target?.result as string;
+        // Limpiar posibles caracteres nulos o raros de codificación
+        text = text.replace(/\0/g, '');
+
         const lines = text.split(/\r\n|\n/).filter((l) => l.trim().length > 0);
 
         if (lines.length === 0) {
@@ -212,7 +215,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
       }
     };
 
-    reader.readAsText(fileSelected);
+    reader.readAsText(fileSelected, 'ISO-8859-1');
   };
 
   // Inserción masiva en Supabase mapeando columnas exacta y posicionalmente
@@ -298,6 +301,18 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
           const itemSoVal = (row.item_so || row.itemso || '').toString().trim() || undefined;
           const imgUrlVal = (row.imagen_url || row.imagen || '').toString().trim() || undefined;
 
+          // Helper para generar códigos únicos sin caracteres extraños
+          const generateCodeSlug = (input: string, prefix = 'CAT') => {
+            const clean = input
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-zA-Z0-9\s-]/g, '')
+              .trim()
+              .toUpperCase()
+              .replace(/\s+/g, '-');
+            return (clean.substring(0, 15) || `${prefix}-${Math.floor(100 + Math.random() * 900)}`);
+          };
+
           // Resolver Categoria y Subcategoria (Auto-creando dinámicamente si no existen)
           let catIdFound: string | undefined = undefined;
           let subcatIdFound: string | undefined = undefined;
@@ -311,12 +326,22 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
 
             if (!catMatched) {
               try {
-                const newCatCode = catInputRaw.substring(0, 10).toUpperCase().replace(/\s+/g, '-');
-                const createdCat = await articulosApi.crearCategoria({
-                  codigo: newCatCode,
-                  nombre: catInputRaw,
-                  activo: true,
-                });
+                const newCatCode = generateCodeSlug(catInputRaw, 'CAT');
+                let createdCat;
+                try {
+                  createdCat = await articulosApi.crearCategoria({
+                    codigo: newCatCode,
+                    nombre: catInputRaw,
+                    activo: true,
+                  });
+                } catch (dupCatErr) {
+                  // Retry con sufijo único
+                  createdCat = await articulosApi.crearCategoria({
+                    codigo: `${newCatCode}-${Math.floor(100 + Math.random() * 900)}`,
+                    nombre: catInputRaw,
+                    activo: true,
+                  });
+                }
                 catMatched = { ...createdCat, subcategorias: [] };
                 dbCategorias.push(catMatched);
               } catch (catErr) {
@@ -335,13 +360,24 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
 
                 if (!subMatched) {
                   try {
-                    const newSubCode = subcatInputRaw.substring(0, 10).toUpperCase().replace(/\s+/g, '-');
-                    const createdSub = await articulosApi.crearSubcategoria({
-                      categoria_id: catMatched.id,
-                      codigo: newSubCode,
-                      nombre: subcatInputRaw,
-                      activo: true,
-                    });
+                    const newSubCode = generateCodeSlug(subcatInputRaw, 'SUB');
+                    let createdSub;
+                    try {
+                      createdSub = await articulosApi.crearSubcategoria({
+                        categoria_id: catMatched.id,
+                        codigo: newSubCode,
+                        nombre: subcatInputRaw,
+                        activo: true,
+                      });
+                    } catch (dupSubErr) {
+                      // Retry con sufijo único en caso de colisión (código de error 23505)
+                      createdSub = await articulosApi.crearSubcategoria({
+                        categoria_id: catMatched.id,
+                        codigo: `${newSubCode}-${Math.floor(100 + Math.random() * 900)}`,
+                        nombre: subcatInputRaw,
+                        activo: true,
+                      });
+                    }
                     subMatched = createdSub;
                     if (!catMatched.subcategorias) catMatched.subcategorias = [];
                     catMatched.subcategorias.push(subMatched);
