@@ -7,6 +7,7 @@ import {
   X,
   RefreshCw,
   Download,
+  Info,
 } from 'lucide-react';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 import { clientesApi, Cliente } from '@/api/clientesApi';
@@ -41,8 +42,9 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
   const [dbClientes, setDbClientes] = useState<Cliente[]>(clientesProp);
   const [dbCategorias, setDbCategorias] = useState<any[]>([]);
   const [dbSubcategorias, setDbSubcategorias] = useState<any[]>([]);
+  const [dbDestinatarios, setDbDestinatarios] = useState<any[]>([]);
 
-  // Asegurar que tengamos la lista actualizada de clientes, categorías y subcategorías
+  // Asegurar que tengamos la lista actualizada de clientes, categorías, subcategorías y destinatarios
   useEffect(() => {
     if (isOpen) {
       if (clientesProp.length > 0) {
@@ -52,6 +54,14 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
           setDbClientes(list || []);
         }).catch((err) => {
           console.warn('No se pudieron obtener clientes para vincular:', err);
+        });
+      }
+
+      if (tipoFinal === 'destinatarios') {
+        clientesApi.listarDestinatarios({ soloActivos: false }).then((list) => {
+          setDbDestinatarios(list || []);
+        }).catch((err) => {
+          console.warn('No se pudieron obtener destinatarios previos:', err);
         });
       }
 
@@ -67,7 +77,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
         console.warn('No se pudieron obtener subcategorías para vincular:', err);
       });
     }
-  }, [isOpen, clientesProp]);
+  }, [isOpen, clientesProp, tipoFinal]);
 
   if (!isOpen) return null;
 
@@ -84,7 +94,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
     },
     destinatarios: {
       titulo: 'Importar Destinatarios / Sucursales (CSV)',
-      desc: 'Subida masiva de puntos de entrega, direcciones y localidades vinculadas a clientes.',
+      desc: 'Subida masiva de puntos de entrega, bocas de reparto compartidas o sucursales propias por cliente.',
       templateName: 'plantilla_destinatarios_sucursales.csv',
     },
     lotes: {
@@ -108,8 +118,8 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
       headers = 'id_producto,codigo_cliente,sku,nombre,descripcion,categoria,subcategoria,marca_bulto,ean13,tipo_empaque,unidad_medida,unidades_por_bulto,cantidad_por_pallet,peso_gw,medida_m3,factor_estiba,item_so,color,rotacion_abc';
       exampleRow = 'PROD-1001,100,ART-1001,Acolchado Gris 2 Plazas,Acolchado microfibra termico,Textil,Dormitorio,POSTO BLANCO,7791234567890,caja,mts,50.0,40,12.5,0.045,0,SO-99281,Gris,B';
     } else if (tipoFinal === 'destinatarios') {
-      headers = 'codigo_cliente,codigo_sucursal,razon_social,direccion_entrega,ciudad,telefono,contacto_recepcion';
-      exampleRow = '100,SUC-01,Sucursal Central Palermo,Av. Santa Fe 3200,Buenos Aires,+541148889900,Juan Perez';
+      headers = 'codigo_cliente,codigo_sucursal,razon_social,direccion_entrega,ciudad,telefono,contacto_recepcion,ventana_horaria,es_sucursal_propia';
+      exampleRow = '100|101,CD-ESTEBAN,Centro Distribución Esteban Echeverría,Camino de Cintura 4500,Esteban Echeverría,+541144445555,Muelle 12,06:00 a 12:00 hs,NO\n100,SUC-PAL,Sucursal Central Palermo,Av. Santa Fe 3200,Buenos Aires,+541148889900,Juan Perez,09:00 a 18:00 hs,SI';
     } else if (tipoFinal === 'lotes') {
       headers = 'codigo_cliente,numero_lote,fecha_fabricacion,fecha_vencimiento,motivo_bloqueo';
       exampleRow = '100,LOT-2026-X89,2026-01-15,2028-01-15,Lote textil hilado importado primera calidad';
@@ -178,13 +188,16 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
             firstCol.includes('nombre') ||
             firstCol.includes('id_producto') ||
             firstCol.includes('id') ||
-            firstCol.includes('cuit'));
+            firstCol.includes('cuit') ||
+            firstCol.includes('destinatario') ||
+            firstCol.includes('sucursal') ||
+            firstCol.includes('cliente'));
 
         let headers: string[] = [];
         let startIndex = 0;
 
         if (hasHeader) {
-          headers = firstLineCols.map((h) => h.toLowerCase());
+          headers = firstLineCols.map((h) => h.toLowerCase().trim().replace(/[\s-]+/g, '_'));
           startIndex = 1;
         }
 
@@ -458,39 +471,218 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
           throw new Error(`Error en la importación: ${erroresRows[0]}`);
         }
       } else if (tipoFinal === 'destinatarios') {
-        for (const row of parsedRows) {
-          const raw = row._rawCols || [];
+        // Asegurar que tengamos la lista fresca de clientes
+        let clientList = dbClientes;
+        if (clientList.length === 0) {
+          clientList = await clientesApi.listarClientes(false);
+          setDbClientes(clientList);
+        }
 
-          const codClienteTarget = (row.codigo_cliente || row.cliente || raw[0] || '').toString().trim().toLowerCase();
-          const cliFound = dbClientes.find((c) => c.codigo.toLowerCase() === codClienteTarget || c.razon_social.toLowerCase().includes(codClienteTarget));
-          const targetClienteId = cliFound ? cliFound.id : (dbClientes[0]?.id || '');
+        if (clientList.length === 0) {
+          throw new Error('No hay clientes registrados en el sistema para asociar destinatarios.');
+        }
 
-          if (!targetClienteId) {
-            throw new Error('No hay clientes registrados en el sistema para asociar destinatarios.');
+        // Obtener destinatarios existentes para deduplicar
+        let existingDests = dbDestinatarios.length > 0
+          ? [...dbDestinatarios]
+          : await clientesApi.listarDestinatarios({ soloActivos: false });
+
+        let nuevosCount = 0;
+        let vinculacionesCount = 0;
+        const erroresRows: string[] = [];
+
+        // Helper para resolver los IDs de clientes a partir del valor del CSV
+        const resolverClientes = (valorRaw: string): string[] => {
+          const texto = (valorRaw || '').trim();
+          if (!texto) {
+            return clientList[0] ? [clientList[0].id] : [];
+          }
+          if (['todos', 'global', '*', 'all'].includes(texto.toLowerCase())) {
+            return clientList.map((c) => c.id);
           }
 
-          const codSucursal = (row.codigo_sucursal || row.codigo || raw[1] || '').toString().trim() || undefined;
-          const razonSoc = (row.razon_social || row.nombre || raw[2] || 'Sucursal Destino').toString().trim();
-          const dirEntrega = (row.direccion_entrega || row.direccion || raw[3] || 'Dirección General').toString().trim();
-          const ciudadVal = (row.ciudad || raw[4] || '').toString().trim() || undefined;
-          const telVal = (row.telefono || raw[5] || '').toString().trim() || undefined;
-          const contactoVal = (row.contacto_recepcion || row.contacto || raw[6] || '').toString().trim() || undefined;
+          // Separar por delimitadores comunes: pleca |, punto y coma ;, o coma ,
+          const tokens = texto.split(/[|,;]+/).map((t) => t.trim().toLowerCase()).filter(Boolean);
+          const ids: string[] = [];
 
-          await clientesApi.crearDestinatario(
-            {
-              cliente_id: targetClienteId,
-              codigo_sucursal: codSucursal,
-              razon_social: razonSoc,
-              direccion_entrega: dirEntrega,
-              ciudad: ciudadVal,
-              telefono: telVal,
-              contacto_recepcion: contactoVal,
-              activo: true,
-            },
-            [targetClienteId]
-          );
-          creadosCount++;
+          for (const tok of tokens) {
+            const found = clientList.find(
+              (c) =>
+                c.codigo.toLowerCase() === tok ||
+                (c.identificacion_fiscal && c.identificacion_fiscal.toLowerCase() === tok) ||
+                c.id.toLowerCase() === tok ||
+                c.razon_social.toLowerCase() === tok ||
+                c.razon_social.toLowerCase().includes(tok)
+            );
+            if (found && !ids.includes(found.id)) {
+              ids.push(found.id);
+            }
+          }
+
+          return ids.length > 0 ? ids : (clientList[0] ? [clientList[0].id] : []);
+        };
+
+        for (let idx = 0; idx < parsedRows.length; idx++) {
+          const row = parsedRows[idx];
+          const raw = row._rawCols || [];
+          const rowNum = idx + 1;
+
+          // 1. Extraer campos soportando encabezados normalizados y columnas posicionales
+          const clienteVal = (
+            row.codigo_cliente ||
+            row.cliente ||
+            row.cliente_id ||
+            row.cuit_cliente ||
+            (raw.length > 0 ? raw[0] : '')
+          ).toString().trim();
+
+          const codSucursal = (
+            row.codigo_sucursal ||
+            row.codigo ||
+            row.sucursal ||
+            (raw.length > 1 ? raw[1] : '')
+          ).toString().trim();
+
+          const razonSoc = (
+            row.razon_social ||
+            row.nombre ||
+            row.destinatario ||
+            (raw.length > 2 ? raw[2] : '')
+          ).toString().trim();
+
+          const dirEntrega = (
+            row.direccion_entrega ||
+            row.direccion ||
+            (raw.length > 3 ? raw[3] : '')
+          ).toString().trim();
+
+          const ciudadVal = (
+            row.ciudad ||
+            row.localidad ||
+            (raw.length > 4 ? raw[4] : '')
+          ).toString().trim() || undefined;
+
+          const telVal = (
+            row.telefono ||
+            row.tel ||
+            (raw.length > 5 ? raw[5] : '')
+          ).toString().trim() || undefined;
+
+          const contactoVal = (
+            row.contacto_recepcion ||
+            row.contacto ||
+            (raw.length > 6 ? raw[6] : '')
+          ).toString().trim() || undefined;
+
+          const ventanaVal = (
+            row.ventana_horaria ||
+            row.ventana_horaria_entrega ||
+            row.ventana ||
+            row.horario ||
+            (raw.length > 7 ? raw[7] : '')
+          ).toString().trim() || undefined;
+
+          const esPropiaRaw = (
+            row.es_sucursal_propia ||
+            row.es_propia ||
+            row.sucursal_propia ||
+            (raw.length > 8 ? raw[8] : '')
+          ).toString().trim().toLowerCase();
+
+          const esSucursalPropia = ['si', 's', 'true', '1', 'yes'].includes(esPropiaRaw);
+
+          // Si la fila está completamente vacía de datos esenciales, omitir
+          if (!razonSoc && !dirEntrega && !codSucursal) {
+            continue;
+          }
+
+          const razonSocFinal = razonSoc || codSucursal || 'Destinatario Sin Nombre';
+          const dirEntregaFinal = dirEntrega || razonSocFinal || 'Dirección a Confirmar';
+
+          // 2. Resolver clientes a vincular
+          let targetClienteIds = resolverClientes(clienteVal);
+          // Si es sucursal propia, solo se vincula a su cliente titular exclusivo
+          if (esSucursalPropia && targetClienteIds.length > 1) {
+            targetClienteIds = [targetClienteIds[0]];
+          }
+
+          try {
+            // 3. Deduplicación inteligente: buscar si ya existe en la base de datos
+            let destExistente = null;
+
+            if (codSucursal) {
+              destExistente = existingDests.find(
+                (d) => d.codigo_sucursal && d.codigo_sucursal.trim().toLowerCase() === codSucursal.toLowerCase()
+              );
+            }
+
+            if (!destExistente && razonSocFinal && dirEntregaFinal) {
+              destExistente = existingDests.find(
+                (d) =>
+                  d.razon_social.trim().toLowerCase() === razonSocFinal.toLowerCase() &&
+                  d.direccion_entrega.trim().toLowerCase() === dirEntregaFinal.toLowerCase()
+              );
+            }
+
+            if (destExistente) {
+              // El destinatario ya existe: Reutilizamos su registro maestro y vinculamos los clientes
+              for (const cId of targetClienteIds) {
+                await clientesApi.asociarClienteDestinatario(cId, destExistente.id, esSucursalPropia);
+                vinculacionesCount++;
+              }
+
+              // Opcional: completar datos faltantes si la fila del CSV viene con información enriquecida
+              const updates: any = {};
+              if (ciudadVal && !destExistente.ciudad) updates.ciudad = ciudadVal;
+              if (telVal && !destExistente.telefono) updates.telefono = telVal;
+              if (contactoVal && !destExistente.contacto_recepcion) updates.contacto_recepcion = contactoVal;
+              if (ventanaVal && !destExistente.ventana_horaria_entrega) updates.ventana_horaria_entrega = ventanaVal;
+              if (Object.keys(updates).length > 0) {
+                await clientesApi.actualizarDestinatario(destExistente.id, updates);
+                Object.assign(destExistente, updates);
+              }
+            } else {
+              // No existe: creamos el nuevo destinatario y sus relaciones en clientes_destinatarios
+              const nuevoDest = await clientesApi.crearDestinatario(
+                {
+                  cliente_id: esSucursalPropia ? targetClienteIds[0] : null,
+                  codigo_sucursal: codSucursal || null,
+                  razon_social: razonSocFinal,
+                  direccion_entrega: dirEntregaFinal,
+                  ciudad: ciudadVal || null,
+                  telefono: telVal || null,
+                  contacto_recepcion: contactoVal || null,
+                  ventana_horaria_entrega: ventanaVal || null,
+                  activo: true,
+                },
+                targetClienteIds,
+                esSucursalPropia
+              );
+
+              existingDests.push(nuevoDest);
+              nuevosCount++;
+              vinculacionesCount += targetClienteIds.length;
+            }
+          } catch (rowErr: any) {
+            console.warn(`Error en fila ${rowNum} (${razonSocFinal}):`, rowErr);
+            erroresRows.push(`Fila ${rowNum} (${razonSocFinal}): ${rowErr.message || 'Error al procesar'}`);
+          }
         }
+
+        if (erroresRows.length > 0 && nuevosCount === 0 && vinculacionesCount === 0) {
+          throw new Error(`Error en la importación: ${erroresRows[0]}`);
+        }
+
+        setFeedback({
+          type: 'success',
+          text: `¡Importación completada! Se procesaron ${parsedRows.length} filas: ${nuevosCount} destinatarios nuevos creados y ${vinculacionesCount} vinculaciones con clientes generadas exitosamente.${erroresRows.length > 0 ? ` (${erroresRows.length} observaciones)` : ''}`,
+        });
+
+        setTimeout(() => {
+          onSuccess();
+          onClose();
+        }, 1800);
+        return;
       } else if (tipoFinal === 'lotes') {
         for (const row of parsedRows) {
           const raw = row._rawCols || [];
@@ -584,6 +776,32 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
               </button>
             </div>
 
+            {/* Informational banner for destinatarios N:M */}
+            {tipoFinal === 'destinatarios' && (
+              <div className="p-3.5 rounded-xl bg-purple-50 dark:bg-[#20152b] border border-purple-200 dark:border-[#522b7c] text-xs text-purple-900 dark:text-[#dab9ff] space-y-1.5 shadow-sm">
+                <div className="flex items-center gap-2 font-bold">
+                  <span className="px-1.5 py-0.5 rounded bg-purple-200/70 dark:bg-[#522b7c] text-purple-900 dark:text-[#dab9ff] text-[10px] font-mono">
+                    N:M
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-purple-700 dark:text-[#dab9ff]" />
+                    <span>Relación Multi-Cliente y Sucursales Propias</span>
+                  </div>
+                </div>
+                <ul className="text-[11px] space-y-1 text-purple-800/90 dark:text-[#dab9ff]/80 list-disc list-inside">
+                  <li>
+                    <b>Varios Clientes:</b> En <code className="bg-purple-100 dark:bg-[#341b4f] px-1 py-0.5 rounded font-mono">codigo_cliente</code> puede indicar un código (<code className="font-mono">100</code>), varios separados por pleca (<code className="font-mono">100|101</code>) o <code className="font-mono">TODOS</code>.
+                  </li>
+                  <li>
+                    <b>Sucursal Propia:</b> Marque <code className="bg-purple-100 dark:bg-[#341b4f] px-1 py-0.5 rounded font-mono">es_sucursal_propia = SI</code> para depósitos o locales privados del cliente.
+                  </li>
+                  <li>
+                    <b>Deduplicación Automática:</b> Si el punto de entrega ya existe (por código o dirección), no se duplica; se asocia automáticamente a la cuenta del cliente.
+                  </li>
+                </ul>
+              </div>
+            )}
+
             {/* Step 2: Upload CSV File */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-[#e5e2e1] mb-2">
@@ -601,7 +819,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
                   {file ? file.name : 'Haga clic aquí para seleccionar su archivo CSV'}
                 </span>
                 <span className="text-[11px] text-slate-500 dark:text-[#cdc3d4] mt-1">
-                  Formatos soportados: .csv (separado por comas, con o sin encabezados)
+                  Formatos soportados: .csv (separado por comas o punto y coma, con o sin encabezados)
                 </span>
               </label>
             </div>
@@ -635,17 +853,17 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
                     ✓ Listos para importar
                   </span>
                 </div>
-                <div className="border border-slate-200 dark:border-[#333333] rounded-xl overflow-hidden max-h-48 overflow-y-auto">
-                  <table className="w-full text-left text-xs">
+                <div className="border border-slate-200 dark:border-[#333333] rounded-xl overflow-x-auto max-h-48 overflow-y-auto">
+                  <table className="w-full text-left text-xs whitespace-nowrap">
                     <thead className="bg-slate-100 dark:bg-[#201f1f] text-slate-700 dark:text-[#cdc3d4] sticky top-0 uppercase font-semibold text-[10px]">
                       <tr>
                         <th className="p-2">#</th>
                         {Object.keys(parsedRows[0])
                           .filter((k) => k !== '_rawCols')
-                          .slice(0, 5)
+                          .slice(0, 8)
                           .map((key) => (
                             <th key={key} className="p-2">
-                              {key}
+                              {key.replace(/_/g, ' ')}
                             </th>
                           ))}
                       </tr>
@@ -656,12 +874,31 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
                           <td className="p-2 font-mono text-slate-400">{i + 1}</td>
                           {Object.keys(parsedRows[0])
                             .filter((k) => k !== '_rawCols')
-                            .slice(0, 5)
-                            .map((key) => (
-                              <td key={key} className="p-2 font-mono text-slate-700 dark:text-[#e5e2e1] truncate max-w-[120px]">
-                                {String(row[key] ?? '')}
-                              </td>
-                            ))}
+                            .slice(0, 8)
+                            .map((key) => {
+                              const val = String(row[key] ?? '');
+                              if (key === 'es_sucursal_propia' || key === 'es_propia') {
+                                const isPropia = ['si', 's', 'true', '1', 'yes'].includes(val.toLowerCase());
+                                return (
+                                  <td key={key} className="p-2">
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                        isPropia
+                                          ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700'
+                                          : 'bg-slate-100 dark:bg-[#252424] text-slate-600 dark:text-slate-400'
+                                      }`}
+                                    >
+                                      {isPropia ? 'SI (Propia)' : 'NO (Compartida)'}
+                                    </span>
+                                  </td>
+                                );
+                              }
+                              return (
+                                <td key={key} className="p-2 font-mono text-slate-700 dark:text-[#e5e2e1] truncate max-w-[160px]">
+                                  {val}
+                                </td>
+                              );
+                            })}
                         </tr>
                       ))}
                     </tbody>

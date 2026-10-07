@@ -682,6 +682,7 @@ export const DestinatariosAbm: React.FC<DestinatariosAbmProps> = ({
         isOpen={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         tipoEntidad="destinatarios"
+        clientes={clientes}
         onSuccess={() => {
           cargarDestinatarios();
           if (onRefreshParent) onRefreshParent();
