@@ -10,7 +10,7 @@ import {
   Info,
 } from 'lucide-react';
 import { ModalPortal } from '@/components/ui/ModalPortal';
-import { clientesApi, Cliente } from '@/api/clientesApi';
+import { clientesApi, Cliente, Destinatario } from '@/api/clientesApi';
 import { articulosApi } from '@/api/articulosApi';
 import { lotesApi } from '@/api/lotesApi';
 
@@ -251,13 +251,13 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
       if (tipoFinal === 'clientes') {
         for (const row of parsedRows) {
           const raw = row._rawCols || [];
-          
+
           const codigoVal = (row.codigo || row.codigo_cliente || raw[0] || `CLI-${Math.floor(1000 + Math.random() * 9000)}`).toString().trim();
           const razonSocialVal = (row.razon_social || row.nombre || raw[1] || 'Cliente Importado').toString().trim();
           const cuitVal = (row.identificacion_fiscal || row.cuit || row.rut || raw[2] || '').toString().trim() || undefined;
           const emailVal = (row.email_contacto || row.email || row.mail || raw[3] || '').toString().trim() || undefined;
           const telVal = (row.telefono || row.tel || raw[4] || '').toString().trim() || undefined;
-          
+
           // Dirección & Ciudad
           let dirVal = (row.direccion || raw[5] || '').toString().trim();
           const ciudadVal = (row.ciudad || raw[6] || '').toString().trim();
@@ -773,7 +773,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
     >
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 dark:bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
         <div className="bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col text-slate-800 dark:text-[#e5e2e1]">
-          
+
           {/* Header */}
           <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-[#333333] flex items-center justify-between bg-slate-50 dark:bg-[#201f1f]">
             <div className="flex items-center gap-3">
@@ -865,11 +865,10 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
             {/* Feedback Message */}
             {feedback && (
               <div
-                className={`p-3.5 rounded-xl text-xs flex items-center gap-2.5 ${
-                  feedback.type === 'success'
+                className={`p-3.5 rounded-xl text-xs flex items-center gap-2.5 ${feedback.type === 'success'
                     ? 'bg-emerald-50 dark:bg-[#0f241a] text-emerald-700 dark:text-[#69f0ae] border border-emerald-200 dark:border-[#1b4332]'
                     : 'bg-rose-50 dark:bg-[#381015] text-rose-700 dark:text-[#ffb4ab] border border-rose-200 dark:border-[#690005]'
-                }`}
+                  }`}
               >
                 {feedback.type === 'success' ? (
                   <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-[#69f0ae]" />
@@ -920,11 +919,10 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
                                 return (
                                   <td key={key} className="p-2">
                                     <span
-                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                        isPropia
+                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${isPropia
                                           ? 'bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700'
                                           : 'bg-slate-100 dark:bg-[#252424] text-slate-600 dark:text-slate-400'
-                                      }`}
+                                        }`}
                                     >
                                       {isPropia ? 'SI (Propia)' : 'NO (Compartida)'}
                                     </span>
