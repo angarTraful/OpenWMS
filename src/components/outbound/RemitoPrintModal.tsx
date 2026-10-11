@@ -325,7 +325,10 @@ export const RemitoPrintModal: React.FC<RemitoPrintModalProps> = ({
                     Dirección: {remitoEmitido.destinatario?.direccion_entrega || pedido.destinatario?.direccion_entrega}
                   </div>
                   <div className="text-[10px] text-slate-700">
-                    Ciudad / Localidad: {remitoEmitido.destinatario?.ciudad || 'No especificada'}
+                    Localidad / Ciudad: {[
+                      remitoEmitido.destinatario?.localidad || pedido.destinatario?.localidad,
+                      remitoEmitido.destinatario?.ciudad || pedido.destinatario?.ciudad,
+                    ].filter(Boolean).join(' • ') || 'No especificada'}
                   </div>
                 </div>
               </div>

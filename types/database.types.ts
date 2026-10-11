@@ -282,6 +282,7 @@ export type Database = {
         Row: {
           activo: boolean
           actualizado_en: string
+          localidad: string | null
           ciudad: string | null
           cliente_id: string | null
           codigo_sucursal: string | null
@@ -296,6 +297,7 @@ export type Database = {
         Insert: {
           activo?: boolean
           actualizado_en?: string
+          localidad?: string | null
           ciudad?: string | null
           cliente_id?: string | null
           codigo_sucursal?: string | null
@@ -310,6 +312,7 @@ export type Database = {
         Update: {
           activo?: boolean
           actualizado_en?: string
+          localidad?: string | null
           ciudad?: string | null
           cliente_id?: string | null
           codigo_sucursal?: string | null

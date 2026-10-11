@@ -108,7 +108,11 @@ export const RotuloExpresoPrintModal: React.FC<RotuloExpresoPrintModalProps> = (
                     </p>
                     <p className="text-xs font-medium text-slate-900 mt-1">
                       <span className="font-semibold text-black">Dirección:</span> {destinatario.direccion_entrega || 'Dirección de Entrega no especificada'}
-                      {destinatario.ciudad && <span className="font-bold text-black uppercase"> - {destinatario.ciudad}</span>}
+                      {(destinatario.localidad || destinatario.ciudad) && (
+                        <span className="font-bold text-black uppercase">
+                          {' '}• {[destinatario.localidad, destinatario.ciudad].filter(Boolean).join(', ')}
+                        </span>
+                      )}
                     </p>
                   </div>
 

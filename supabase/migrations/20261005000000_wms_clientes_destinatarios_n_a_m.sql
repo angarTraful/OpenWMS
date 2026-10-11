@@ -79,7 +79,20 @@ ALTER TABLE public.pedidos
 
 -- Asignar almacén de origen del pedido (para saber desde qué muelle/almacén se retira o despacha)
 ALTER TABLE public.pedidos 
-  ADD COLUMN IF NOT EXISTS almacen_origen_id UUID REFERENCES public.almacenes(id) ON DELETE SET NULL;
+  ADD COLUMN IF NOT EXISTS almacen_origen_id UUID;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint 
+    WHERE conname = 'pedidos_almacen_origen_id_fkey'
+  ) THEN
+    ALTER TABLE public.pedidos
+      ADD CONSTRAINT pedidos_almacen_origen_id_fkey
+      FOREIGN KEY (almacen_origen_id) REFERENCES public.almacenes(id)
+      ON DELETE SET NULL;
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_pedidos_modalidad_entrega 
   ON public.pedidos(modalidad_entrega);
@@ -89,3 +102,6 @@ CREATE INDEX IF NOT EXISTS idx_pedidos_almacen_origen
 -- 8. En remitos_transito también flexibilizar destinatario_id si es entrega pick-up directa
 ALTER TABLE public.remitos_transito 
   ALTER COLUMN destinatario_id DROP NOT NULL;
+
+-- 9. Forzar recarga inmediata de la caché de esquemas en PostgREST (Supabase Data API)
+NOTIFY pgrst, 'reload schema';

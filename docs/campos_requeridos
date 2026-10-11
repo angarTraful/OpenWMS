@@ -46,10 +46,11 @@ MAPEO DESTINATARIOS / SUCURSALES (destinatarios)
 | Campo ERP (Tus Nombres) | Campo en OpenWMS (Base de Datos) | Obligatorio | Descripción / Ejemplo |
 | :--- | :--- | :--- | :--- |
 | **Codigo_Cliente** / **Cliente** | `cliente_id` / `codigo_cliente` | **SI** | Código del cliente depositante. Ej: `100` |
-| **Codigo_Sucursal** | `codigo_sucursal` | Opcional | Código de sucursal/punto de entrega. Ej: `SUC-01` |
+| **Codigo_Sucursal** | `codigo_sucursal` | Opcional | Código de sucursal. Si se omite, se autogenera correlativo (`[Razon Social] SUC1`, `SUC2`, etc.) evitando duplicados si coincide la dirección física. |
 | **Razon_Social** / **Nombre** | `razon_social` | **SI** | Nombre del punto de entrega. Ej: `Sucursal Central Palermo` |
 | **Direccion_Entrega** | `direccion_entrega` | **SI** | Dirección física de entrega. Ej: `Av. Santa Fe 3200` |
-| **Ciudad** | `ciudad` | Opcional | Localidad / Ciudad. Ej: `Buenos Aires` |
+| **Localidad** | `localidad` | Opcional | Localidad / Barrio. Ej: `Palermo` |
+| **Ciudad** | `ciudad` | Opcional | Ciudad / Partido provincial. Ej: `CABA` |
 | **Telefono** | `telefono` | Opcional | Teléfono de contacto en recepción. Ej: `+541148889900` |
 | **Contacto** | `contacto_recepcion` | Opcional | Persona encargada de la recepción. Ej: `Juan Perez` |
 

@@ -177,6 +177,9 @@ export const PlanillaRomaneoPrintModal: React.FC<PlanillaRomaneoPrintModalProps>
                     </p>
                     <p className="text-slate-600 text-[11px]">
                       {pedido.destinatario?.direccion_entrega || ''}
+                      {[pedido.destinatario?.localidad, pedido.destinatario?.ciudad].filter(Boolean).length > 0
+                        ? ` - ${[pedido.destinatario?.localidad, pedido.destinatario?.ciudad].filter(Boolean).join(' • ')}`
+                        : ''}
                     </p>
                   </div>
                 </div>

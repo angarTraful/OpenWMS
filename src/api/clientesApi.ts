@@ -28,9 +28,159 @@ export type DestinatarioUpdate = Database['public']['Tables']['destinatarios']['
 
 export type ClienteDestinatario = Database['public']['Tables']['clientes_destinatarios']['Row'];
 export type ClienteDestinatarioInsert = Database['public']['Tables']['clientes_destinatarios']['Insert'];
-export type ClienteDestinatarioUpdate = Database['public']['Tables']['clientes_destinatarios']['Update'];
+// --- Helpers de Deduplicación y Generación de Códigos de Sucursal ---
+
+/**
+ * Normaliza una dirección física para comparaciones y prevención de duplicados:
+ * - Pasa a minúsculas
+ * - Elimina acentos/diacríticos
+ * - Normaliza abreviaturas viales comunes (av, avenida -> av, etc.)
+ * - Elimina puntuación y unifica espacios en blanco
+ */
+export function normalizarDireccion(direccion: string): string {
+  if (!direccion) return '';
+  let s = direccion
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()º°]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Reemplazar prefijos viales usuales
+  s = s.replace(/^avenida\s+/i, 'av ');
+  s = s.replace(/^avda\s+/i, 'av ');
+  s = s.replace(/^calle\s+/i, '');
+  s = s.replace(/\b(nro|n°|num|numero)\b/gi, '');
+  s = s.replace(/\s+/g, ' ').trim();
+  return s;
+}
+
+/**
+ * Normaliza un texto general para comparaciones flexibles
+ */
+export function normalizarTexto(texto: string): string {
+  if (!texto) return '';
+  return texto
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Extrae la base de la Razón Social para usar como prefijo en el código de sucursal
+ * Ej: "Supermercados Coto S.A." -> "COTO", "Farmacity" -> "FARMACITY"
+ */
+export function obtenerBaseRazonSocial(razonSocial: string): string {
+  if (!razonSocial) return 'DEST';
+  let base = razonSocial
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[,.-]+$/, '')
+    .trim();
+
+  // Limpiar sufijos societarios comunes si están al final (S.A., S.R.L., S.A.S., etc.)
+  base = base.replace(/\s+(S\.?A\.?|S\.?R\.?L\.?|S\.?A\.?S\.?|S\.?C\.?A\.?|C\.?I\.?C\.?S\.?A\.?)$/i, '').trim();
+
+  return base || 'DEST';
+}
+
+/**
+ * Genera automáticamente el código correlativo de sucursal:
+ * "Razon Social" + " SUC1" o "SUC2", "SUC3", etc.
+ */
+export function generarSiguienteCodigoSucursal(
+  razonSocial: string,
+  existentes: Array<{ razon_social?: string | null; codigo_sucursal?: string | null }>
+): string {
+  const base = obtenerBaseRazonSocial(razonSocial);
+  const baseNorm = normalizarTexto(base);
+  const razonNorm = normalizarTexto(razonSocial);
+
+  let maxNum = 0;
+
+  for (const d of existentes) {
+    const cod = (d.codigo_sucursal || '').trim();
+    if (!cod) continue;
+
+    const dRazonNorm = normalizarTexto(d.razon_social || '');
+    const perteneceMismaRazon =
+      !dRazonNorm ||
+      dRazonNorm === razonNorm ||
+      dRazonNorm.includes(baseNorm) ||
+      baseNorm.includes(dRazonNorm) ||
+      normalizarTexto(cod).startsWith(baseNorm);
+
+    if (perteneceMismaRazon) {
+      const match = cod.match(/(?:SUC|SUCURSAL)[-_\s]*(\d+)/i) || cod.match(/(\d+)$/);
+      if (match && match[1]) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    }
+  }
+
+  const siguiente = maxNum + 1;
+  return `${base} SUC${siguiente}`;
+}
+
+/**
+ * Busca si ya existe un destinatario con la misma dirección física
+ * para evitar duplicados.
+ */
+export function buscarDestinatarioPorDireccion(
+  direccion: string,
+  existentes: Destinatario[],
+  razonSocial?: string
+): Destinatario | undefined {
+  const dirNorm = normalizarDireccion(direccion);
+  if (!dirNorm) return undefined;
+
+  const razonNorm = razonSocial ? normalizarTexto(razonSocial) : '';
+  const baseNorm = razonSocial ? normalizarTexto(obtenerBaseRazonSocial(razonSocial)) : '';
+
+  // 1. Coincidencia exacta de dirección Y coincidencia de Razón Social / Prefijo
+  if (razonNorm) {
+    const exactMatch = existentes.find((d) => {
+      const dDirNorm = normalizarDireccion(d.direccion_entrega || '');
+      if (dDirNorm !== dirNorm) return false;
+
+      const dRazonNorm = normalizarTexto(d.razon_social || '');
+      const dBaseNorm = normalizarTexto(obtenerBaseRazonSocial(d.razon_social || ''));
+
+      return (
+        dRazonNorm === razonNorm ||
+        dBaseNorm === baseNorm ||
+        dRazonNorm.includes(baseNorm) ||
+        baseNorm.includes(dRazonNorm)
+      );
+    });
+
+    if (exactMatch) return exactMatch;
+  }
+
+  // 2. Coincidencia de dirección física idéntica
+  return existentes.find((d) => {
+    const dDirNorm = normalizarDireccion(d.direccion_entrega || '');
+    return dDirNorm === dirNorm;
+  });
+}
 
 export const clientesApi = {
+  // Exponer utilidades para uso directo
+  normalizarDireccion,
+  normalizarTexto,
+  obtenerBaseRazonSocial,
+  generarSiguienteCodigoSucursal,
+  buscarDestinatarioPorDireccion,
+
   // --- Clientes Depositantes ---
   async listarClientes(soloActivos = true) {
     let query = supabase.from('clientes').select('*').order('razon_social', { ascending: true });
@@ -206,12 +356,85 @@ export const clientesApi = {
   async crearDestinatario(
     destinatario: DestinatarioInsert,
     clienteIds: string[] = [],
-    esSucursalPropia = false
-  ): Promise<Destinatario> {
-    const { data, error } = await supabase.from('destinatarios').insert(destinatario).select().single();
+    esSucursalPropia = false,
+    opciones?: {
+      evitarDuplicadosPorDireccion?: boolean;
+      destinatariosExistentes?: Destinatario[];
+    }
+  ): Promise<Destinatario & { esDuplicadoReutilizado?: boolean }> {
+    const evitarDuplicados = opciones?.evitarDuplicadosPorDireccion ?? true;
+
+    // 1. Si está habilitada la deduplicación, verificar si ya existe un destinatario con la misma dirección física
+    if (evitarDuplicados && destinatario.direccion_entrega) {
+      try {
+        let lista = opciones?.destinatariosExistentes;
+        if (!lista) {
+          const { data: dbDests } = await supabase.from('destinatarios').select('*');
+          lista = (dbDests || []) as Destinatario[];
+        }
+
+        if (lista && lista.length > 0) {
+          const encontrado = buscarDestinatarioPorDireccion(
+            destinatario.direccion_entrega,
+            lista,
+            destinatario.razon_social
+          );
+
+          if (encontrado) {
+            // Reutilizar el destinatario existente y vincular los clientes solicitados
+            const targets = new Set<string>(clienteIds);
+            if (destinatario.cliente_id) {
+              targets.add(destinatario.cliente_id);
+            }
+
+            if (targets.size > 0) {
+              try {
+                const rows = Array.from(targets).map((cId) => ({
+                  cliente_id: cId,
+                  destinatario_id: encontrado.id,
+                  activo: true,
+                  es_sucursal_propia: esSucursalPropia,
+                }));
+                await supabase.from('clientes_destinatarios').upsert(rows);
+              } catch (relErr) {
+                console.warn('No se pudo vincular destinatario en tabla intermedia:', relErr);
+              }
+            }
+
+            return { ...encontrado, esDuplicadoReutilizado: true };
+          }
+        }
+      } catch (checkErr) {
+        console.warn('Error al verificar duplicados de destinatario por dirección:', checkErr);
+      }
+    }
+
+    // 2. Si no viene código de sucursal, auto-generar "Razon Social" + " SUC1", "SUC2", etc.
+    let codigoFinal = destinatario.codigo_sucursal?.trim() || null;
+    if (!codigoFinal && destinatario.razon_social) {
+      try {
+        let lista = opciones?.destinatariosExistentes;
+        if (!lista) {
+          const { data: todos } = await supabase.from('destinatarios').select('*');
+          lista = (todos || []) as Destinatario[];
+        }
+        codigoFinal = generarSiguienteCodigoSucursal(destinatario.razon_social, lista || []);
+      } catch (genErr) {
+        console.warn('Error al auto-generar codigo_sucursal:', genErr);
+        const base = obtenerBaseRazonSocial(destinatario.razon_social);
+        codigoFinal = `${base} SUC1`;
+      }
+    }
+
+    const payload: DestinatarioInsert = {
+      ...destinatario,
+      codigo_sucursal: codigoFinal ? codigoFinal.toUpperCase() : null,
+    };
+
+    const { data, error } = await supabase.from('destinatarios').insert(payload).select().single();
     if (error) throw error;
 
-    // Si se enviaron clientes a vincular o si viene cliente_id, insertamos en clientes_destinatarios
+    // 3. Vincular a los clientes en clientes_destinatarios
     const targets = new Set<string>(clienteIds);
     if (destinatario.cliente_id) {
       targets.add(destinatario.cliente_id);

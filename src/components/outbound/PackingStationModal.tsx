@@ -300,7 +300,12 @@ export const PackingStationModal: React.FC<PackingStationModalProps> = ({
                 <div>
                   <span className="text-slate-500 dark:text-[#cdc3d4] block mb-0.5">Destinatario / Entrega</span>
                   <span className="font-bold text-slate-900 dark:text-[#e5e2e1]">{currentPedido.destinatario?.razon_social || 'Destinatario'}</span>
-                  <span className="text-[11px] text-slate-500 dark:text-[#cdc3d4] block truncate">{currentPedido.destinatario?.direccion_entrega}</span>
+                  <span className="text-[11px] text-slate-500 dark:text-[#cdc3d4] block truncate">
+                    {currentPedido.destinatario?.direccion_entrega}
+                    {[currentPedido.destinatario?.localidad, currentPedido.destinatario?.ciudad].filter(Boolean).length > 0
+                      ? ` • ${[currentPedido.destinatario?.localidad, currentPedido.destinatario?.ciudad].filter(Boolean).join(', ')}`
+                      : ''}
+                  </span>
                 </div>
                 <div>
                   <span className="text-slate-500 dark:text-[#cdc3d4] block mb-0.5">Estado del Pedido</span>

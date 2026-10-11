@@ -6,31 +6,107 @@ export type PedidoInsert = Database['public']['Tables']['pedidos']['Insert'];
 
 export const pedidosApi = {
   async listarPedidos(clienteId?: string) {
-    let query = supabase
+    try {
+      let query = supabase
+        .from('pedidos')
+        .select(`
+          *,
+          cliente:clientes(id, razon_social),
+          destinatario:destinatarios(id, razon_social, direccion_entrega, localidad, ciudad),
+          almacen_origen:almacenes(id, nombre, codigo, direccion),
+          detalles:pedidos_detalle(id, cantidad_solicitada, cantidad_reservada, cantidad_separada, articulo_id)
+        `)
+        .order('fecha_solicitud', { ascending: false });
+
+      if (clienteId) query = query.eq('cliente_id', clienteId);
+      const { data, error } = await query;
+      if (!error && data) return data;
+      if (error && !error.message?.includes('almacenes') && !error.message?.includes('localidad') && !error.message?.includes('schema cache')) {
+        throw error;
+      }
+      console.warn('Fallback en listarPedidos por relación o campo no encontrado en schema cache:', error?.message);
+    } catch (err: any) {
+      if (!err.message?.includes('almacenes') && !err.message?.includes('localidad') && !err.message?.includes('schema cache')) {
+        throw err;
+      }
+      console.warn('Fallback en listarPedidos sin join directo con almacenes o campos pendientes:', err.message);
+    }
+
+    // Fallback: consulta sin el join de almacenes
+    let fallbackQuery = supabase
       .from('pedidos')
       .select(`
         *,
         cliente:clientes(id, razon_social),
-        destinatario:destinatarios(id, razon_social, direccion_entrega, ciudad),
-        almacen_origen:almacenes(id, nombre, codigo, direccion),
+        destinatario:destinatarios(*),
         detalles:pedidos_detalle(id, cantidad_solicitada, cantidad_reservada, cantidad_separada, articulo_id)
       `)
       .order('fecha_solicitud', { ascending: false });
 
-    if (clienteId) query = query.eq('cliente_id', clienteId);
-    const { data, error } = await query;
-    if (error) throw error;
-    return data;
+    if (clienteId) fallbackQuery = fallbackQuery.eq('cliente_id', clienteId);
+    const { data: fbData, error: fbError } = await fallbackQuery;
+    if (fbError) throw fbError;
+
+    // Si los pedidos tienen almacen_origen_id, enriquecer con los datos del almacén
+    try {
+      const almacenIds = Array.from(
+        new Set((fbData || []).map((p: any) => p.almacen_origen_id).filter(Boolean))
+      );
+      if (almacenIds.length > 0) {
+        const { data: almacenesList } = await supabase
+          .from('almacenes')
+          .select('id, nombre, codigo, direccion')
+          .in('id', almacenIds);
+
+        const almacenesMap = new Map((almacenesList || []).map((a: any) => [a.id, a]));
+        return (fbData || []).map((p: any) => ({
+          ...p,
+          almacen_origen: p.almacen_origen_id ? almacenesMap.get(p.almacen_origen_id) || null : null,
+        }));
+      }
+    } catch {
+      // Si la consulta secundaria no prospera, devolver la lista base
+    }
+
+    return fbData;
   },
 
   async obtenerPedidoConDetalle(pedidoId: string) {
-    const { data, error } = await supabase
+    try {
+      const { data, error } = await supabase
+        .from('pedidos')
+        .select(`
+          *,
+          cliente:clientes(*),
+          destinatario:destinatarios(*),
+          almacen_origen:almacenes(*),
+          detalles:pedidos_detalle(
+            *,
+            articulo:articulos(*),
+            tareas_picking:tareas_picking(*)
+          )
+        `)
+        .eq('id', pedidoId)
+        .single();
+      if (!error && data) return data;
+      if (error && !error.message?.includes('almacenes') && !error.message?.includes('schema cache')) {
+        throw error;
+      }
+      console.warn('Fallback en obtenerPedidoConDetalle por relación no encontrada en schema cache:', error?.message);
+    } catch (err: any) {
+      if (!err.message?.includes('almacenes') && !err.message?.includes('schema cache')) {
+        throw err;
+      }
+      console.warn('Fallback en obtenerPedidoConDetalle sin join directo con almacenes:', err.message);
+    }
+
+    // Fallback: consulta sin el join de almacenes
+    const { data: fbData, error: fbError } = await supabase
       .from('pedidos')
       .select(`
         *,
         cliente:clientes(*),
         destinatario:destinatarios(*),
-        almacen_origen:almacenes(*),
         detalles:pedidos_detalle(
           *,
           articulo:articulos(*),
@@ -39,8 +115,25 @@ export const pedidosApi = {
       `)
       .eq('id', pedidoId)
       .single();
-    if (error) throw error;
-    return data;
+
+    if (fbError) throw fbError;
+
+    if (fbData && (fbData as any).almacen_origen_id) {
+      try {
+        const { data: alm } = await supabase
+          .from('almacenes')
+          .select('*')
+          .eq('id', (fbData as any).almacen_origen_id)
+          .single();
+        if (alm) {
+          (fbData as any).almacen_origen = alm;
+        }
+      } catch {
+        // Ignorar si falla la consulta secundaria
+      }
+    }
+
+    return fbData;
   },
 
   async crearPedido(
@@ -50,11 +143,27 @@ export const pedidosApi = {
       cantidad_solicitada: number;
     }>
   ) {
-    const { data: nuevoPedido, error: errPedido } = await supabase
-      .from('pedidos')
-      .insert(pedido)
-      .select()
-      .single();
+    let nuevoPedido: any = null;
+    let errPedido: any = null;
+
+    const res = await supabase.from('pedidos').insert(pedido).select().single();
+    nuevoPedido = res.data;
+    errPedido = res.error;
+
+    // Si falla por columnas nuevas aún no presentes en la caché de Supabase, reintentar con payload base
+    if (
+      errPedido &&
+      (errPedido.message?.includes('almacen_origen_id') ||
+        errPedido.message?.includes('modalidad_entrega') ||
+        errPedido.message?.includes('schema cache'))
+    ) {
+      console.warn('Reintentando crear pedido sin campos pendientes de migración:', errPedido.message);
+      const { almacen_origen_id, modalidad_entrega, ...pedidoBase } = pedido as any;
+      const retryRes = await supabase.from('pedidos').insert(pedidoBase).select().single();
+      nuevoPedido = retryRes.data;
+      errPedido = retryRes.error;
+    }
+
     if (errPedido) throw errPedido;
 
     const renglones = detalles.map((d) => ({

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, MapPin, Save, AlertCircle, Building2 } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, MapPin, Save, AlertCircle, Building2, Info, Sparkles } from 'lucide-react';
 import { clientesApi, Destinatario, DestinatarioInsert, DestinatarioUpdate, Cliente } from '../../api/clientesApi';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 
@@ -32,14 +32,30 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
   const [razonSocial, setRazonSocial] = useState('');
   const [codigoSucursal, setCodigoSucursal] = useState('');
   const [direccionEntrega, setDireccionEntrega] = useState('');
+  const [localidad, setLocalidad] = useState('');
   const [ciudad, setCiudad] = useState('');
   const [contactoRecepcion, setContactoRecepcion] = useState('');
   const [telefono, setTelefono] = useState('');
   const [ventanaHoraria, setVentanaHoraria] = useState('');
   const [activo, setActivo] = useState(true);
 
+  // Catálogo completo de destinatarios en memoria para cálculo de SUC y deduplicación en tiempo real
+  const [existingDestinatarios, setExistingDestinatarios] = useState<Destinatario[]>([]);
+
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Código de sucursal sugerido en tiempo real al tipear Razón Social
+  const codigoSugerido = useMemo(() => {
+    if (isEditing || !razonSocial.trim()) return '';
+    return clientesApi.generarSiguienteCodigoSucursal(razonSocial, existingDestinatarios);
+  }, [isEditing, razonSocial, existingDestinatarios]);
+
+  // Detección en tiempo real de duplicado por misma dirección física
+  const duplicadoDetectado = useMemo(() => {
+    if (isEditing || !direccionEntrega.trim()) return null;
+    return clientesApi.buscarDestinatarioPorDireccion(direccionEntrega, existingDestinatarios, razonSocial);
+  }, [isEditing, direccionEntrega, razonSocial, existingDestinatarios]);
 
   useEffect(() => {
     if (isOpen) {
@@ -63,6 +79,7 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
         setRazonSocial(destinatario.razon_social || '');
         setCodigoSucursal(destinatario.codigo_sucursal || '');
         setDireccionEntrega(destinatario.direccion_entrega || '');
+        setLocalidad(destinatario.localidad || '');
         setCiudad(destinatario.ciudad || '');
         setContactoRecepcion(destinatario.contacto_recepcion || '');
         setTelefono(destinatario.telefono || '');
@@ -77,6 +94,7 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
         setRazonSocial('');
         setCodigoSucursal('');
         setDireccionEntrega('');
+        setLocalidad('');
         setCiudad('');
         setContactoRecepcion('');
         setTelefono('');
@@ -84,6 +102,12 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
         setActivo(true);
       }
       setErrorMsg(null);
+
+      // Cargar lista completa de destinatarios para autogenerar SUC y detectar duplicados
+      clientesApi
+        .listarDestinatarios({ soloActivos: false })
+        .then((data) => setExistingDestinatarios(data || []))
+        .catch((err) => console.warn('No se pudo cargar catálogo de destinatarios para sugerencias:', err));
     }
   }, [isOpen, destinatario, defaultClienteId, clientes]);
 
@@ -129,12 +153,15 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
       const finalClienteIds = esSucursalPropia ? (clienteId ? [clienteId] : []) : selectedClienteIds;
       const primaryClienteId = esSucursalPropia ? clienteId : (finalClienteIds[0] || null);
 
+      const finalCodigoSucursal = (codigoSucursal.trim() || codigoSugerido || '').trim() || null;
+
       if (isEditing && destinatario) {
         const cambios: DestinatarioUpdate = {
           cliente_id: primaryClienteId,
           razon_social: razonSocial.trim(),
-          codigo_sucursal: codigoSucursal.trim() || null,
+          codigo_sucursal: finalCodigoSucursal,
           direccion_entrega: direccionEntrega.trim(),
+          localidad: localidad.trim() || null,
           ciudad: ciudad.trim() || null,
           contacto_recepcion: contactoRecepcion.trim() || null,
           telefono: telefono.trim() || null,
@@ -153,8 +180,9 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
         const nuevo: DestinatarioInsert = {
           cliente_id: primaryClienteId,
           razon_social: razonSocial.trim(),
-          codigo_sucursal: codigoSucursal.trim() || null,
+          codigo_sucursal: finalCodigoSucursal,
           direccion_entrega: direccionEntrega.trim(),
+          localidad: localidad.trim() || null,
           ciudad: ciudad.trim() || null,
           contacto_recepcion: contactoRecepcion.trim() || null,
           telefono: telefono.trim() || null,
@@ -164,7 +192,11 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
         const created = await clientesApi.crearDestinatario(
           nuevo,
           finalClienteIds,
-          esSucursalPropia
+          esSucursalPropia,
+          {
+            evitarDuplicadosPorDireccion: true,
+            destinatariosExistentes: existingDestinatarios,
+          }
         );
         if (onCreated) onCreated(created);
       }
@@ -351,21 +383,64 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
-                Cód. Sucursal
-              </label>
-              <input
-                type="text"
-                value={codigoSucursal}
-                onChange={(e) => setCodigoSucursal(e.target.value.toUpperCase())}
-                placeholder="SUC-04"
-                className="w-full px-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1] font-mono focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase">
+                  Cód. Sucursal
+                </label>
+                {codigoSugerido && !codigoSucursal && (
+                  <span className="text-[10px] text-violet-600 dark:text-[#dab9ff] font-medium flex items-center gap-0.5">
+                    <Sparkles className="w-2.5 h-2.5" />
+                    Auto: {codigoSugerido}
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={codigoSucursal}
+                  onChange={(e) => setCodigoSucursal(e.target.value.toUpperCase())}
+                  placeholder={codigoSugerido || 'Ej: COTO SUC1'}
+                  className="w-full px-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1] font-mono focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
+                />
+                {codigoSugerido && !codigoSucursal && (
+                  <button
+                    type="button"
+                    onClick={() => setCodigoSucursal(codigoSugerido)}
+                    title="Fijar código sugerido"
+                    className="absolute right-1.5 top-1.5 px-1.5 py-0.5 text-[10px] rounded bg-violet-100 text-violet-700 hover:bg-violet-200 dark:bg-[#522b7c]/50 dark:text-[#dab9ff] font-semibold transition-colors"
+                  >
+                    Usar
+                  </button>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+                {codigoSugerido && !codigoSucursal
+                  ? `Se asignará "${codigoSugerido}" si se deja vacío.`
+                  : 'Opcional. Se auto-genera correlativo (SUC1, SUC2...).'}
+              </p>
             </div>
           </div>
 
-          {/* Dirección & Ciudad */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Detección en tiempo real de duplicado por dirección física */}
+          {duplicadoDetectado && (
+            <div className="p-3 rounded-lg bg-amber-50 dark:bg-[#2e1d05] border border-amber-200 dark:border-amber-600/50 text-amber-900 dark:text-amber-200 text-xs flex items-start gap-2.5 animate-fadeIn">
+              <Info className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5" />
+              <div className="space-y-0.5">
+                <div className="font-semibold text-amber-950 dark:text-amber-100 flex items-center gap-1.5">
+                  <span>Dirección física ya registrada</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-amber-200/60 dark:bg-amber-800/40 text-amber-900 dark:text-amber-200">
+                    {duplicadoDetectado.codigo_sucursal || 'Sin código'}
+                  </span>
+                </div>
+                <p className="text-[11px] leading-relaxed">
+                  Esta dirección coincide con <strong>{duplicadoDetectado.razon_social}</strong> ({duplicadoDetectado.direccion_entrega}). Al guardar, <span className="underline font-medium">se reutilizará la sucursal existente para evitar duplicados</span> y se vincularán los clientes seleccionados.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Dirección, Localidad & Ciudad */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <div className="sm:col-span-2">
               <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
                 Dirección de Entrega <span className="text-rose-500 dark:text-[#ffb4ab]">*</span>
@@ -381,13 +456,25 @@ export const DestinatarioModal: React.FC<DestinatarioModalProps> = ({
             </div>
             <div>
               <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
-                Ciudad / Localidad
+                Localidad
+              </label>
+              <input
+                type="text"
+                value={localidad}
+                onChange={(e) => setLocalidad(e.target.value)}
+                placeholder="Ej: Palermo / Caseros"
+                className="w-full px-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
+                Ciudad / Partido
               </label>
               <input
                 type="text"
                 value={ciudad}
                 onChange={(e) => setCiudad(e.target.value)}
-                placeholder="CABA"
+                placeholder="Ej: CABA / Bs As"
                 className="w-full px-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
               />
             </div>

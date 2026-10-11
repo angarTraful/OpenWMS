@@ -667,7 +667,7 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                               ) : (
                                 ped.destinatario?.razon_social && (
                                   <span className="text-slate-600 dark:text-[#cdc3d4]">
-                                    • Destino: <b>{ped.destinatario.razon_social}</b> ({ped.destinatario.ciudad || 'Entrega'})
+                                    • Destino: <b>{ped.destinatario.razon_social}</b> ({[ped.destinatario.localidad, ped.destinatario.ciudad].filter(Boolean).join(' • ') || 'Entrega'})
                                   </span>
                                 )
                               )}
@@ -690,7 +690,7 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                           <div className="flex items-center gap-1.5">
                             <MapPin className="w-3.5 h-3.5 text-violet-600 dark:text-[#dab9ff]" />
                             <span>
-                              Destino: <b className="text-slate-800 dark:text-[#e5e2e1]">{ped.destinatario?.razon_social || 'Sucursal Principal'}</b> ({ped.destinatario?.ciudad || 'Local'})
+                              Destino: <b className="text-slate-800 dark:text-[#e5e2e1]">{ped.destinatario?.razon_social || 'Sucursal Principal'}</b> ({[ped.destinatario?.localidad, ped.destinatario?.ciudad].filter(Boolean).join(' • ') || 'Local'})
                             </span>
                           </div>
 
@@ -1613,7 +1613,7 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                             const gMapUrl = p.destinatario?.direccion_entrega
                               ? despachosApi.generarGoogleMapsParadaUrl(
                                   p.destinatario.direccion_entrega,
-                                  p.destinatario.ciudad
+                                  [p.destinatario.localidad, p.destinatario.ciudad].filter(Boolean).join(', ') || undefined
                                 )
                               : null;
 
@@ -1658,7 +1658,9 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                                     </div>
                                     <div className="text-[10px] text-slate-500 dark:text-[#978d9d] truncate">
                                       {p.destinatario?.direccion_entrega}
-                                      {p.destinatario?.ciudad ? ` • ${p.destinatario.ciudad}` : ''}
+                                      {[p.destinatario?.localidad, p.destinatario?.ciudad].filter(Boolean).length > 0
+                                        ? ` • ${[p.destinatario?.localidad, p.destinatario?.ciudad].filter(Boolean).join(', ')}`
+                                        : ''}
                                     </div>
 
                                     {/* Información protegida de entrega / desvío / ETA */}

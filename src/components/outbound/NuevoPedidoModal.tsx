@@ -493,7 +493,7 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
                     options={destinatarios.map((d) => ({
                       value: d.id,
                       label: `${d.razon_social}${d.es_sucursal_propia ? ' [Sucursal Propia]' : ''}`,
-                      sublabel: `${d.ciudad || d.direccion_entrega}${
+                      sublabel: `${[d.localidad, d.ciudad].filter(Boolean).join(', ') || d.direccion_entrega}${
                         d.codigo_sucursal ? ` • Cód: ${d.codigo_sucursal}` : ''
                       }`,
                     }))}

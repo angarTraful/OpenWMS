@@ -94,7 +94,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
     },
     destinatarios: {
       titulo: 'Importar Destinatarios / Sucursales (CSV)',
-      desc: 'Subida masiva de puntos de entrega, bocas de reparto compartidas o sucursales propias por cliente.',
+      desc: 'Subida masiva de puntos de entrega. Auto-genera código SUC correlativo y evita duplicados por dirección física.',
       templateName: 'plantilla_destinatarios_sucursales.csv',
     },
     lotes: {
@@ -118,8 +118,8 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
       headers = 'id_producto,codigo_cliente,sku,nombre,descripcion,categoria,subcategoria,marca_bulto,ean13,tipo_empaque,unidad_medida,unidades_por_bulto,cantidad_por_pallet,peso_gw,medida_m3,factor_estiba,item_so,color,rotacion_abc';
       exampleRow = 'PROD-1001,100,ART-1001,Acolchado Gris 2 Plazas,Acolchado microfibra termico,Textil,Dormitorio,POSTO BLANCO,7791234567890,caja,mts,50.0,40,12.5,0.045,0,SO-99281,Gris,B';
     } else if (tipoFinal === 'destinatarios') {
-      headers = 'codigo_cliente,codigo_sucursal,razon_social,direccion_entrega,ciudad,telefono,contacto_recepcion,ventana_horaria,es_sucursal_propia';
-      exampleRow = '100|101,CD-ESTEBAN,Centro Distribución Esteban Echeverría,Camino de Cintura 4500,Esteban Echeverría,+541144445555,Muelle 12,06:00 a 12:00 hs,NO\n100,SUC-PAL,Sucursal Central Palermo,Av. Santa Fe 3200,Buenos Aires,+541148889900,Juan Perez,09:00 a 18:00 hs,SI';
+      headers = 'codigo_cliente,codigo_sucursal,razon_social,direccion_entrega,localidad,ciudad,telefono,contacto_recepcion,ventana_horaria,es_sucursal_propia';
+      exampleRow = '100|101,,Centro Distribución Esteban Echeverría,Camino de Cintura 4500,9 de Abril,Esteban Echeverría,+541144445555,Muelle 12,06:00 a 12:00 hs,NO\n100,,Sucursal Central Palermo,Av. Santa Fe 3200,Palermo,CABA,+541148889900,Juan Perez,09:00 a 18:00 hs,SI';
     } else if (tipoFinal === 'lotes') {
       headers = 'codigo_cliente,numero_lote,fecha_fabricacion,fecha_vencimiento,motivo_bloqueo';
       exampleRow = '100,LOT-2026-X89,2026-01-15,2028-01-15,Lote textil hilado importado primera calidad';
@@ -489,6 +489,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
 
         let nuevosCount = 0;
         let vinculacionesCount = 0;
+        let duplicadosEvitadosCount = 0;
         const erroresRows: string[] = [];
 
         // Helper para resolver los IDs de clientes a partir del valor del CSV
@@ -556,22 +557,39 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
             (raw.length > 3 ? raw[3] : '')
           ).toString().trim();
 
-          const ciudadVal = (
-            row.ciudad ||
+          // Localidad y Ciudad (soportando encabezados y posicionales)
+          let localidadVal = (
             row.localidad ||
-            (raw.length > 4 ? raw[4] : '')
+            row.barrio ||
+            ''
           ).toString().trim() || undefined;
+
+          let ciudadVal = (
+            row.ciudad ||
+            row.partido ||
+            row.provincia ||
+            ''
+          ).toString().trim() || undefined;
+
+          if (!localidadVal && !ciudadVal && raw.length > 4) {
+            if (raw.length >= 10) {
+              localidadVal = (raw[4] || '').toString().trim() || undefined;
+              ciudadVal = (raw[5] || '').toString().trim() || undefined;
+            } else {
+              ciudadVal = (raw[4] || '').toString().trim() || undefined;
+            }
+          }
 
           const telVal = (
             row.telefono ||
             row.tel ||
-            (raw.length > 5 ? raw[5] : '')
+            (raw.length >= 10 ? raw[6] : raw[5] || '')
           ).toString().trim() || undefined;
 
           const contactoVal = (
             row.contacto_recepcion ||
             row.contacto ||
-            (raw.length > 6 ? raw[6] : '')
+            (raw.length >= 10 ? raw[7] : raw[6] || '')
           ).toString().trim() || undefined;
 
           const ventanaVal = (
@@ -579,14 +597,14 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
             row.ventana_horaria_entrega ||
             row.ventana ||
             row.horario ||
-            (raw.length > 7 ? raw[7] : '')
+            (raw.length >= 10 ? raw[8] : raw[7] || '')
           ).toString().trim() || undefined;
 
           const esPropiaRaw = (
             row.es_sucursal_propia ||
             row.es_propia ||
             row.sucursal_propia ||
-            (raw.length > 8 ? raw[8] : '')
+            (raw.length >= 10 ? raw[9] : raw[8] || '')
           ).toString().trim().toLowerCase();
 
           const esSucursalPropia = ['si', 's', 'true', '1', 'yes'].includes(esPropiaRaw);
@@ -607,32 +625,41 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
           }
 
           try {
-            // 3. Deduplicación inteligente: buscar si ya existe en la base de datos
-            let destExistente = null;
+            // 3. Deduplicación inteligente:
+            // a) Buscar primero por código de sucursal explícito si vino en la fila
+            let destExistente: Destinatario | null = null;
 
             if (codSucursal) {
               destExistente = existingDests.find(
                 (d) => d.codigo_sucursal && d.codigo_sucursal.trim().toLowerCase() === codSucursal.toLowerCase()
-              );
+              ) || null;
             }
 
-            if (!destExistente && razonSocFinal && dirEntregaFinal) {
-              destExistente = existingDests.find(
-                (d) =>
-                  d.razon_social.trim().toLowerCase() === razonSocFinal.toLowerCase() &&
-                  d.direccion_entrega.trim().toLowerCase() === dirEntregaFinal.toLowerCase()
+            // b) Si no se encontró por código o no vino código, buscar por dirección física normalizada (+ razón social)
+            if (!destExistente && dirEntregaFinal) {
+              const matchDireccion = clientesApi.buscarDestinatarioPorDireccion(
+                dirEntregaFinal,
+                existingDests,
+                razonSocFinal
               );
+              if (matchDireccion) {
+                destExistente = matchDireccion;
+              }
             }
 
             if (destExistente) {
-              // El destinatario ya existe: Reutilizamos su registro maestro y vinculamos los clientes
+              // El destinatario ya existe (misma dirección o mismo código):
+              // Reutilizamos su registro maestro para evitar duplicados y vinculamos los clientes
+              duplicadosEvitadosCount++;
+
               for (const cId of targetClienteIds) {
                 await clientesApi.asociarClienteDestinatario(cId, destExistente.id, esSucursalPropia);
                 vinculacionesCount++;
               }
 
-              // Opcional: completar datos faltantes si la fila del CSV viene con información enriquecida
+              // Completar datos faltantes si la fila del CSV viene con información enriquecida
               const updates: any = {};
+              if (localidadVal && !destExistente.localidad) updates.localidad = localidadVal;
               if (ciudadVal && !destExistente.ciudad) updates.ciudad = ciudadVal;
               if (telVal && !destExistente.telefono) updates.telefono = telVal;
               if (contactoVal && !destExistente.contacto_recepcion) updates.contacto_recepcion = contactoVal;
@@ -642,13 +669,19 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
                 Object.assign(destExistente, updates);
               }
             } else {
-              // No existe: creamos el nuevo destinatario y sus relaciones en clientes_destinatarios
+              // No existe: auto-generar código de sucursal correlativo si vino vacío ("Razon Social" + " SUC1", "SUC2"...)
+              let codSucursalFinal = codSucursal;
+              if (!codSucursalFinal) {
+                codSucursalFinal = clientesApi.generarSiguienteCodigoSucursal(razonSocFinal, existingDests);
+              }
+
               const nuevoDest = await clientesApi.crearDestinatario(
                 {
                   cliente_id: esSucursalPropia ? targetClienteIds[0] : null,
-                  codigo_sucursal: codSucursal || null,
+                  codigo_sucursal: codSucursalFinal ? codSucursalFinal.toUpperCase() : null,
                   razon_social: razonSocFinal,
                   direccion_entrega: dirEntregaFinal,
+                  localidad: localidadVal || null,
                   ciudad: ciudadVal || null,
                   telefono: telVal || null,
                   contacto_recepcion: contactoVal || null,
@@ -656,9 +689,14 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
                   activo: true,
                 },
                 targetClienteIds,
-                esSucursalPropia
+                esSucursalPropia,
+                {
+                  evitarDuplicadosPorDireccion: false, // Ya verificado arriba con existingDests
+                  destinatariosExistentes: existingDests,
+                }
               );
 
+              // Guardar en la lista para que siguientes filas del mismo CSV mantengan la correlatividad y deduplicación
               existingDests.push(nuevoDest);
               nuevosCount++;
               vinculacionesCount += targetClienteIds.length;
@@ -675,7 +713,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
 
         setFeedback({
           type: 'success',
-          text: `¡Importación completada! Se procesaron ${parsedRows.length} filas: ${nuevosCount} destinatarios nuevos creados y ${vinculacionesCount} vinculaciones con clientes generadas exitosamente.${erroresRows.length > 0 ? ` (${erroresRows.length} observaciones)` : ''}`,
+          text: `¡Importación completada! Se procesaron ${parsedRows.length} filas: ${nuevosCount} destinatarios nuevos creados, ${duplicadosEvitadosCount} duplicados evitados por misma dirección, y ${vinculacionesCount} vinculaciones con clientes generadas exitosamente.${erroresRows.length > 0 ? ` (${erroresRows.length} observaciones)` : ''}`,
         });
 
         setTimeout(() => {

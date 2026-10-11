@@ -135,6 +135,7 @@ export const DestinatariosAbm: React.FC<DestinatariosAbmProps> = ({
         const razon = (dest.razon_social || '').toLowerCase();
         const suc = (dest.codigo_sucursal || '').toLowerCase();
         const dir = (dest.direccion_entrega || '').toLowerCase();
+        const loc = (dest.localidad || '').toLowerCase();
         const ciudad = (dest.ciudad || '').toLowerCase();
         const contacto = (dest.contacto_recepcion || '').toLowerCase();
         const clienteRazon = (dest.cliente?.razon_social || '').toLowerCase();
@@ -146,6 +147,7 @@ export const DestinatariosAbm: React.FC<DestinatariosAbmProps> = ({
           razon.includes(term) ||
           suc.includes(term) ||
           dir.includes(term) ||
+          loc.includes(term) ||
           ciudad.includes(term) ||
           contacto.includes(term) ||
           clienteRazon.includes(term) ||
@@ -173,8 +175,9 @@ export const DestinatariosAbm: React.FC<DestinatariosAbmProps> = ({
       if (columnFilters.direccion.trim()) {
         const fDir = columnFilters.direccion.toLowerCase();
         const dir = (dest.direccion_entrega || '').toLowerCase();
+        const loc = (dest.localidad || '').toLowerCase();
         const ciudad = (dest.ciudad || '').toLowerCase();
-        if (!dir.includes(fDir) && !ciudad.includes(fDir)) return false;
+        if (!dir.includes(fDir) && !loc.includes(fDir) && !ciudad.includes(fDir)) return false;
       }
       if (columnFilters.contacto.trim()) {
         const fCont = columnFilters.contacto.toLowerCase();
@@ -574,10 +577,14 @@ export const DestinatariosAbm: React.FC<DestinatariosAbmProps> = ({
                       )}
                     </td>
 
-                    {/* Dirección */}
+                    {/* Dirección, Localidad & Ciudad */}
                     <td className="py-1.5 px-2.5 text-xs">
                       <div className="text-[#e5e2e1]">{dest.direccion_entrega}</div>
-                      {dest.ciudad && <div className="text-[10px] text-[#cdc3d4]">{dest.ciudad}</div>}
+                      {(dest.localidad || dest.ciudad) && (
+                        <div className="text-[10px] text-[#cdc3d4]">
+                          {[dest.localidad, dest.ciudad].filter(Boolean).join(' • ')}
+                        </div>
+                      )}
                     </td>
 
                     {/* Contacto & Horario */}
