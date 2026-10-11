@@ -116,7 +116,7 @@ export const GeneradorUbicacionesModal: React.FC<GeneradorUbicacionesModalProps>
     }
   };
 
-  const isFormDirty = Boolean(previsualizacion.length > 0);
+  const isFormDirty = Boolean(prefijo !== 'RCK-A' || pasillo !== 'A' || estanteHasta !== 5 || nivelHasta !== 4);
 
   return (
     <ModalPortal

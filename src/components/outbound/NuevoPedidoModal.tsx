@@ -375,7 +375,7 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
 
   if (!isOpen) return null;
 
-  const isFormDirty = Boolean(articulosSeleccionados.length > 0 || numeroOrdenCliente);
+  const isFormDirty = Boolean(renglones.length > 0 || ordenCompraCliente || observaciones);
 
   return (
     <ModalPortal

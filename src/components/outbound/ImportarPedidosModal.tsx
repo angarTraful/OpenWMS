@@ -450,7 +450,7 @@ export const ImportarPedidosModal: React.FC<ImportarPedidosModalProps> = ({
 
   if (!isOpen) return null;
 
-  const isFormDirty = Boolean(file || pedidosImportados.length > 0);
+  const isFormDirty = Boolean(fileName || rawText || parsedRows.length > 0);
 
   return (
     <ModalPortal

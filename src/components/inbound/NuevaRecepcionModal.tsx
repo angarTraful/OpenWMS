@@ -605,7 +605,7 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
 
   if (!isOpen) return null;
 
-  const isFormDirty = Boolean(detalles.length > 0 || numeroRemito);
+  const isFormDirty = Boolean(renglones.length > 0 || nroContenedorOc || observaciones);
 
   return (
     <ModalPortal

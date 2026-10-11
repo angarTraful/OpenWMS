@@ -205,7 +205,7 @@ export const PackingStationModal: React.FC<PackingStationModalProps> = ({
   const currentPedido = pedidoDetallado || pedido;
   const detalles = currentPedido.detalles || [];
 
-  const isFormDirty = Boolean(bultos.length > 0);
+  const isFormDirty = Boolean(palletSalidaLpn || totalBultos > 1);
 
   return (
     <ModalPortal
