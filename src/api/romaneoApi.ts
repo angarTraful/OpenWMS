@@ -1,18 +1,8 @@
 import { supabase } from './supabaseClient';
+import type { Database } from '../../types/database.types';
 
-export interface RecursoDescarga {
-  id?: string;
-  recepcion_id: string;
-  tipo_recurso: string;
-  descripcion?: string;
-  unidad_medida: string;
-  cantidad: number;
-  costo_unitario: number;
-  costo_total?: number;
-  incluido_en_tarifario: boolean;
-  proveedor_servicio?: string;
-  creado_en?: string;
-}
+export type RecursoDescarga = Database['public']['Tables']['ordenes_recepcion_recursos']['Row'];
+export type RecursoDescargaInsert = Database['public']['Tables']['ordenes_recepcion_recursos']['Insert'];
 
 export interface RomaneoExcepcion {
   id?: string;
@@ -28,12 +18,14 @@ export interface RomaneoExcepcion {
   unidad_medida: string;
   diferencia?: number;
   observaciones?: string;
+  es_estandar?: boolean;
+  imprimir_en_reverso?: boolean;
   articulo?: any;
 }
 
 export const romaneoApi = {
   // --- RECURSOS DE DESCARGA ---
-  async listarRecursosRecepcion(recepcionId: string) {
+  async listarRecursosRecepcion(recepcionId: string): Promise<RecursoDescarga[]> {
     const { data, error } = await supabase
       .from('ordenes_recepcion_recursos')
       .select('*')
@@ -41,18 +33,19 @@ export const romaneoApi = {
       .order('creado_en', { ascending: true });
 
     if (error) throw error;
-    return data as RecursoDescarga[];
+    return (data || []) as RecursoDescarga[];
   },
 
-  async agregarRecursoRecepcion(recurso: RecursoDescarga) {
+  async agregarRecursoRecepcion(recurso: RecursoDescargaInsert): Promise<RecursoDescarga> {
+    const { costo_total, ...payload } = recurso;
     const { data, error } = await supabase
       .from('ordenes_recepcion_recursos')
-      .insert(recurso)
+      .insert(payload)
       .select('*')
       .single();
 
     if (error) throw error;
-    return data as RecursoDescarga;
+    return data;
   },
 
   async eliminarRecursoRecepcion(id: string) {
@@ -80,9 +73,22 @@ export const romaneoApi = {
   },
 
   async guardarExcepcionesRecepcion(excepciones: RomaneoExcepcion[]) {
+    const cleanPayload = excepciones.map(({ articulo, diferencia, ...item }) => ({
+      recepcion_id: item.recepcion_id!,
+      recepcion_detalle_id: item.recepcion_detalle_id || null,
+      articulo_id: item.articulo_id,
+      nro_secuencia: item.nro_secuencia,
+      codigo_etiqueta_lpn: item.codigo_etiqueta_lpn || null,
+      medida_estandar: item.medida_estandar,
+      medida_real: item.medida_real,
+      unidad_medida: item.unidad_medida,
+      observaciones: item.observaciones || null,
+      ...(item.id ? { id: item.id } : {}),
+    }));
+
     const { data, error } = await supabase
       .from('ordenes_recepcion_romaneo_excepciones')
-      .upsert(excepciones)
+      .upsert(cleanPayload)
       .select('*');
 
     if (error) throw error;
@@ -105,9 +111,23 @@ export const romaneoApi = {
   },
 
   async guardarRomaneoPedido(registros: RomaneoExcepcion[]) {
+    const cleanPayload = registros.map(({ articulo, diferencia, ...item }) => ({
+      pedido_id: item.pedido_id || null,
+      orden_salida_id: item.orden_salida_id || null,
+      articulo_id: item.articulo_id,
+      nro_secuencia: item.nro_secuencia,
+      codigo_etiqueta_lpn: item.codigo_etiqueta_lpn || null,
+      medida_estandar: item.medida_estandar,
+      medida_real: item.medida_real,
+      unidad_medida: item.unidad_medida,
+      es_estandar: item.es_estandar ?? false,
+      imprimir_en_reverso: item.imprimir_en_reverso ?? true,
+      ...(item.id ? { id: item.id } : {}),
+    }));
+
     const { data, error } = await supabase
       .from('remitos_romaneo_excepciones')
-      .upsert(registros)
+      .upsert(cleanPayload)
       .select('*');
 
     if (error) throw error;

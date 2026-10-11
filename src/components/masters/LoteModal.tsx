@@ -116,7 +116,17 @@ export const LoteModal: React.FC<LoteModalProps> = ({
     }
   };
 
-  const isFormDirty = Boolean(formData.numero_lote || formData.fecha_vencimiento);
+  const isFormDirty = isEditing
+    ? Boolean(
+        lote &&
+          (clienteId !== (lote.cliente_id || '') ||
+            numeroLote !== (lote.numero_lote || '') ||
+            fechaFabricacion !== (lote.fecha_fabricacion ? lote.fecha_fabricacion.split('T')[0] : '') ||
+            fechaVencimiento !== (lote.fecha_vencimiento ? lote.fecha_vencimiento.split('T')[0] : '') ||
+            bloqueado !== Boolean(lote.bloqueado) ||
+            motivoBloqueo !== (lote.motivo_bloqueo || ''))
+      )
+    : Boolean(numeroLote || motivoBloqueo);
 
   return (
     <ModalPortal

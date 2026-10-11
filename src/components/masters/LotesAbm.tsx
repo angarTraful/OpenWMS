@@ -715,6 +715,7 @@ export const LotesAbm: React.FC<LotesAbmProps> = ({
         isOpen={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         tipoEntidad="lotes"
+        clientes={clientes}
         onSuccess={() => {
           cargarLotes();
           if (onRefreshParent) onRefreshParent();

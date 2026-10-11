@@ -114,7 +114,19 @@ export const ClienteModal: React.FC<ClienteModalProps> = ({
     }
   };
 
-  const isFormDirty = Boolean(formData.codigo_cliente || formData.razon_social || formData.identificacion_fiscal || formData.email || formData.telefono);
+  const isFormDirty = isEditing
+    ? Boolean(
+        cliente &&
+          (codigo !== (cliente.codigo || '') ||
+            razonSocial !== (cliente.razon_social || '') ||
+            identificacionFiscal !== (cliente.identificacion_fiscal || '') ||
+            emailContacto !== (cliente.email_contacto || '') ||
+            telefono !== (cliente.telefono || '') ||
+            direccion !== (cliente.direccion || '') ||
+            unidadNegocio !== (cliente.unidad_negocio || '') ||
+            activo !== (cliente.activo ?? true))
+      )
+    : Boolean(codigo || razonSocial || identificacionFiscal || emailContacto || telefono || direccion || unidadNegocio);
 
   return (
     <ModalPortal

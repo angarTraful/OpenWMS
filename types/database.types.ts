@@ -873,6 +873,129 @@ export type Database = {
           },
         ]
       }
+      ordenes_recepcion_recursos: {
+        Row: {
+          id: string
+          recepcion_id: string
+          tipo_recurso: string
+          descripcion: string | null
+          unidad_medida: string
+          cantidad: number
+          costo_unitario: number
+          costo_total: number | null
+          incluido_en_tarifario: boolean
+          proveedor_servicio: string | null
+          creado_en: string
+          actualizado_en: string
+        }
+        Insert: {
+          id?: string
+          recepcion_id: string
+          tipo_recurso: string
+          descripcion?: string | null
+          unidad_medida?: string
+          cantidad?: number
+          costo_unitario?: number
+          costo_total?: number | null
+          incluido_en_tarifario?: boolean
+          proveedor_servicio?: string | null
+          creado_en?: string
+          actualizado_en?: string
+        }
+        Update: {
+          id?: string
+          recepcion_id?: string
+          tipo_recurso?: string
+          descripcion?: string | null
+          unidad_medida?: string
+          cantidad?: number
+          costo_unitario?: number
+          costo_total?: number | null
+          incluido_en_tarifario?: boolean
+          proveedor_servicio?: string | null
+          creado_en?: string
+          actualizado_en?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ordenes_recepcion_recursos_recepcion_id_fkey"
+            columns: ["recepcion_id"]
+            isOneToOne: false
+            referencedRelation: "ordenes_recepcion"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ordenes_recepcion_romaneo_excepciones: {
+        Row: {
+          id: string
+          recepcion_id: string
+          recepcion_detalle_id: string | null
+          articulo_id: string
+          nro_secuencia: number
+          codigo_etiqueta_lpn: string | null
+          medida_estandar: number
+          medida_real: number
+          unidad_medida: string
+          diferencia: number | null
+          observaciones: string | null
+          creado_en: string
+          actualizado_en: string
+        }
+        Insert: {
+          id?: string
+          recepcion_id: string
+          recepcion_detalle_id?: string | null
+          articulo_id: string
+          nro_secuencia: number
+          codigo_etiqueta_lpn?: string | null
+          medida_estandar: number
+          medida_real: number
+          unidad_medida?: string
+          diferencia?: number | null
+          observaciones?: string | null
+          creado_en?: string
+          actualizado_en?: string
+        }
+        Update: {
+          id?: string
+          recepcion_id?: string
+          recepcion_detalle_id?: string | null
+          articulo_id?: string
+          nro_secuencia?: number
+          codigo_etiqueta_lpn?: string | null
+          medida_estandar?: number
+          medida_real?: number
+          unidad_medida?: string
+          diferencia?: number | null
+          observaciones?: string | null
+          creado_en?: string
+          actualizado_en?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ordenes_recepcion_romaneo_excepciones_recepcion_id_fkey"
+            columns: ["recepcion_id"]
+            isOneToOne: false
+            referencedRelation: "ordenes_recepcion"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ordenes_recepcion_romaneo_excepciones_recepcion_detalle_id_fkey"
+            columns: ["recepcion_detalle_id"]
+            isOneToOne: false
+            referencedRelation: "ordenes_recepcion_detalle"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ordenes_recepcion_romaneo_excepciones_articulo_id_fkey"
+            columns: ["articulo_id"]
+            isOneToOne: false
+            referencedRelation: "articulos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ordenes_salida: {
         Row: {
           actualizado_en: string
@@ -1230,6 +1353,73 @@ export type Database = {
             columns: ["pedido_id"]
             isOneToOne: false
             referencedRelation: "pedidos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      remitos_romaneo_excepciones: {
+        Row: {
+          id: string
+          pedido_id: string | null
+          orden_salida_id: string | null
+          articulo_id: string
+          nro_secuencia: number
+          codigo_etiqueta_lpn: string | null
+          medida_estandar: number
+          medida_real: number
+          unidad_medida: string
+          es_estandar: boolean
+          imprimir_en_reverso: boolean
+          creado_en: string
+        }
+        Insert: {
+          id?: string
+          pedido_id?: string | null
+          orden_salida_id?: string | null
+          articulo_id: string
+          nro_secuencia: number
+          codigo_etiqueta_lpn?: string | null
+          medida_estandar: number
+          medida_real: number
+          unidad_medida?: string
+          es_estandar?: boolean
+          imprimir_en_reverso?: boolean
+          creado_en?: string
+        }
+        Update: {
+          id?: string
+          pedido_id?: string | null
+          orden_salida_id?: string | null
+          articulo_id?: string
+          nro_secuencia?: number
+          codigo_etiqueta_lpn?: string | null
+          medida_estandar?: number
+          medida_real?: number
+          unidad_medida?: string
+          es_estandar?: boolean
+          imprimir_en_reverso?: boolean
+          creado_en?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "remitos_romaneo_excepciones_pedido_id_fkey"
+            columns: ["pedido_id"]
+            isOneToOne: false
+            referencedRelation: "pedidos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "remitos_romaneo_excepciones_orden_salida_id_fkey"
+            columns: ["orden_salida_id"]
+            isOneToOne: false
+            referencedRelation: "ordenes_salida"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "remitos_romaneo_excepciones_articulo_id_fkey"
+            columns: ["articulo_id"]
+            isOneToOne: false
+            referencedRelation: "articulos"
             referencedColumns: ["id"]
           },
         ]
