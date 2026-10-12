@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { formatDateTime, formatNumber, formatM3, formatDate, cn } from '@/lib/utils';
+import { getDescripcionFull } from '@/api/articulosApi';
 import {
   TableContainer,
   SortableHeaderCell,
@@ -485,13 +486,8 @@ export const KardexView: React.FC<KardexViewProps> = ({
                   Ficha Kardex Individual de Producto
                 </span>
                 <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-violet-100 dark:bg-[#dab9ff]/20 text-violet-800 dark:text-[#dab9ff] font-bold border border-violet-200 dark:border-[#dab9ff]/30">
-                  SKU: {articuloFiltrado?.sku || 'SKU'}
+                  Código: {articuloFiltrado?.nombre || 'Código'}
                 </span>
-                {articuloFiltrado?.id_producto && articuloFiltrado.id_producto !== articuloFiltrado.sku && (
-                  <span className="text-[10px] font-mono text-slate-500 dark:text-[#cdc3d4]">
-                    (ID: {articuloFiltrado.id_producto})
-                  </span>
-                )}
                 {articuloFiltrado?.color && (
                   <span className="px-1.5 py-0.2 rounded text-[10px] bg-white dark:bg-[#1a1919] text-slate-600 dark:text-[#cdc3d4] border border-slate-200 dark:border-[#333333]">
                     {articuloFiltrado.color}
@@ -499,7 +495,7 @@ export const KardexView: React.FC<KardexViewProps> = ({
                 )}
               </div>
               <h3 className="text-sm font-bold text-slate-900 dark:text-[#e5e2e1] mt-0.5">
-                {articuloFiltrado?.nombre || 'Artículo Seleccionado'}
+                {(articuloFiltrado as any)?.descripcion_full || getDescripcionFull(articuloFiltrado) || articuloFiltrado?.descripcion || 'Artículo Seleccionado'}
               </h3>
               <p className="text-xs text-slate-600 dark:text-[#cdc3d4] mt-0.5">
                 Visualizando exclusivamente los movimientos históricos y trazabilidad de este artículo ({filtered.length} movimientos).
@@ -844,7 +840,7 @@ export const KardexView: React.FC<KardexViewProps> = ({
                   onSort={toggleSort}
                 />
                 <SortableHeaderCell
-                  label="Artículo & SKU"
+                  label="Código & Descripción"
                   field="articulo"
                   currentSortField={sortField}
                   sortAsc={sortAsc}
@@ -905,7 +901,7 @@ export const KardexView: React.FC<KardexViewProps> = ({
                     <ColumnFilterInput
                       value={colFilters.sku}
                       onChange={(val) => handleColFilterChange('sku', val)}
-                      placeholder="Filtrar SKU / nombre..."
+                      placeholder="Filtrar código / desc..."
                     />
                   </th>
                   <th className="py-1.5 px-2">
@@ -965,10 +961,10 @@ export const KardexView: React.FC<KardexViewProps> = ({
                         </td>
                         <td className="py-2 px-3">
                           <div className="font-semibold text-xs text-slate-900 dark:text-[#e5e2e1] group-hover:text-violet-700 dark:group-hover:text-[#dab9ff] transition-colors">
-                            {m.articulo?.sku || '-'}
+                            {m.articulo?.nombre || '-'}
                           </div>
-                          <div className="text-[10px] text-slate-500 dark:text-[#978d9d] truncate max-w-[170px]">
-                            {m.articulo?.nombre || ''}
+                          <div className="text-[10px] text-slate-500 dark:text-[#978d9d] truncate max-w-[200px]" title={(m.articulo as any)?.descripcion_full || getDescripcionFull(m.articulo) || m.articulo?.descripcion || ''}>
+                            {(m.articulo as any)?.descripcion_full || getDescripcionFull(m.articulo) || m.articulo?.descripcion || ''}
                           </div>
                         </td>
                         <td className="py-2 px-3">

@@ -231,15 +231,41 @@ export const pedidosApi = {
     numeroRemitoRx: string;
     cae?: string;
     ordenSalidaId?: string;
+    valorDeclaradoTotal?: number;
   }) {
-    const { data, error } = await supabase.rpc('wms_emitir_remito_rx', {
-      p_pedido_id: params.pedidoId,
-      p_numero_remito_rx: params.numeroRemitoRx,
-      p_cae: params.cae || undefined,
-      p_orden_salida_id: params.ordenSalidaId || undefined
-    });
-    if (error) throw error;
-    return data;
+    let rpcResult: any = null;
+    try {
+      // 1. Intentar llamar con el parámetro extendido p_valor_declarado_total
+      const { data, error } = await supabase.rpc('wms_emitir_remito_rx', {
+        p_pedido_id: params.pedidoId,
+        p_numero_remito_rx: params.numeroRemitoRx,
+        p_cae: params.cae || undefined,
+        p_orden_salida_id: params.ordenSalidaId || undefined,
+        p_valor_declarado_total: params.valorDeclaradoTotal !== undefined ? params.valorDeclaradoTotal : undefined,
+      });
+      if (error) throw error;
+      rpcResult = data;
+    } catch (errRpc: any) {
+      // Fallback: si la función en la DB tiene la firma anterior de 4 parámetros
+      const { data, error } = await supabase.rpc('wms_emitir_remito_rx', {
+        p_pedido_id: params.pedidoId,
+        p_numero_remito_rx: params.numeroRemitoRx,
+        p_cae: params.cae || undefined,
+        p_orden_salida_id: params.ordenSalidaId || undefined,
+      });
+      if (error) throw error;
+      rpcResult = data;
+    }
+
+    // 2. Si el usuario editó el valor declarado total, asegurar que quede persistido en la fila de remitos_transito
+    if (params.valorDeclaradoTotal !== undefined && params.valorDeclaradoTotal >= 0) {
+      await supabase
+        .from('remitos_transito')
+        .update({ valor_declarado_total: params.valorDeclaradoTotal })
+        .eq('pedido_id', params.pedidoId);
+    }
+
+    return rpcResult;
   },
 
   // --- Consulta de Remito con información extendida para impresión ---

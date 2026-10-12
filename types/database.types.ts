@@ -72,6 +72,8 @@ export type Database = {
           medida_m3: number | null
           item_so: string | null
           imagen_url: string | null
+          descripcion_full?: string | null
+          factor_estiba?: number | null
         }
         Insert: {
           activo?: boolean
@@ -104,6 +106,7 @@ export type Database = {
           factor_estiba?: number | null
           item_so?: string | null
           imagen_url?: string | null
+          descripcion_full?: string | null
         }
         Update: {
           activo?: boolean
@@ -136,6 +139,7 @@ export type Database = {
           factor_estiba?: number | null
           item_so?: string | null
           imagen_url?: string | null
+          descripcion_full?: string | null
         }
         Relationships: [
           {

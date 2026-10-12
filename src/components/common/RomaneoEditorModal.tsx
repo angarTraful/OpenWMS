@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { romaneoApi, RomaneoExcepcion } from '@/api/romaneoApi';
 import { formatNumber } from '@/lib/utils';
+import { getDescripcionFull } from '@/api/articulosApi';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 
 interface RomaneoEditorModalProps {
@@ -109,7 +110,7 @@ export const RomaneoEditorModal: React.FC<RomaneoEditorModalProps> = ({
         pedido_id: tipo === 'pedido' ? idEntidad : undefined,
         articulo_id: selectedArticuloId,
         nro_secuencia: nroSecuencia,
-        codigo_etiqueta_lpn: codigoLpn.trim() || `${artSelect?.sku || 'SKU'}-${String(nroSecuencia).padStart(4, '0')}`,
+        codigo_etiqueta_lpn: codigoLpn.trim() || `${artSelect?.nombre || artSelect?.sku || 'ART'}-${String(nroSecuencia).padStart(4, '0')}`,
         medida_estandar: medidaEstandar,
         medida_real: medidaReal,
         unidad_medida: unidadMedida,
@@ -183,7 +184,7 @@ export const RomaneoEditorModal: React.FC<RomaneoEditorModalProps> = ({
                       const artId = art.id || d.articulo_id;
                       return (
                         <option key={artId} value={artId}>
-                          [{art.sku || 'SKU'}] {art.nombre || 'Producto'}
+                          [{art.nombre || art.sku || 'ART'}] {(art as any)?.descripcion_full || getDescripcionFull(art) || art.descripcion || art.nombre || 'Producto'}
                         </option>
                       );
                     })}
@@ -316,8 +317,8 @@ export const RomaneoEditorModal: React.FC<RomaneoEditorModalProps> = ({
                         <td className="p-2.5 font-mono text-slate-500 dark:text-[#cdc3d4]">#{ex.nro_secuencia}</td>
                         <td className="p-2.5 font-mono font-bold text-slate-900 dark:text-[#e5e2e1]">{ex.codigo_etiqueta_lpn}</td>
                         <td className="p-2.5">
-                          <span className="font-mono text-slate-500 dark:text-[#cdc3d4] mr-1.5">[{ex.articulo?.sku || 'SKU'}]</span>
-                          {ex.articulo?.nombre || ''}
+                          <span className="font-mono text-slate-500 dark:text-[#cdc3d4] mr-1.5">[{ex.articulo?.nombre || ex.articulo?.sku || 'ART'}]</span>
+                          {(ex.articulo as any)?.descripcion_full || getDescripcionFull(ex.articulo) || ex.articulo?.descripcion || ex.articulo?.nombre || ''}
                         </td>
                         <td className="p-2.5 text-center font-mono text-slate-500 dark:text-[#cdc3d4]">
                           {formatNumber(ex.medida_estandar)} {ex.unidad_medida}

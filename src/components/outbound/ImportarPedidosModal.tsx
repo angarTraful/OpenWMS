@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { formatNumber } from '@/lib/utils';
 import { clientesApi } from '@/api/clientesApi';
-import { articulosApi, Articulo } from '@/api/articulosApi';
+import { articulosApi, Articulo, getDescripcionFull } from '@/api/articulosApi';
 import { inventarioApi } from '@/api/inventarioApi';
 import { pedidosApi } from '@/api/pedidosApi';
 import { QuickSelect } from '@/components/ui/QuickSelect';
@@ -299,7 +299,7 @@ export const ImportarPedidosModal: React.FC<ImportarPedidosModalProps> = ({
 
           if (matchedArt) {
             artResolvedId = matchedArt.id;
-            artNombre = matchedArt.nombre;
+            artNombre = (matchedArt as any).descripcion_full || getDescripcionFull(matchedArt) || matchedArt.descripcion || matchedArt.nombre;
             dispStock = clientStock[matchedArt.id]?.disponible ?? 0;
 
             if (rawCant <= 0) {

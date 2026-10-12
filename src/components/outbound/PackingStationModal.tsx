@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { formatM3, formatNumber } from '@/lib/utils';
 import { pedidosApi } from '@/api/pedidosApi';
+import { getDescripcionFull } from '@/api/articulosApi';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 
 interface PackingStationModalProps {
@@ -365,9 +366,9 @@ export const PackingStationModal: React.FC<PackingStationModalProps> = ({
                           return (
                             <tr key={d.id} className="hover:bg-slate-50 dark:hover:bg-[#201f1f]/50 transition-colors">
                               <td className="px-4 py-2.5">
-                                <span className="font-semibold text-slate-900 dark:text-[#e5e2e1] block">{art?.nombre || 'Artículo sin nombre'}</span>
+                                <span className="font-mono font-bold text-slate-900 dark:text-[#e5e2e1] block">{art?.nombre || 'Artículo'}</span>
+                                <span className="text-xs text-slate-600 dark:text-[#cdc3d4] block">{(art as any)?.descripcion_full || getDescripcionFull(art) || art?.descripcion || ''}</span>
                                 <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-[#cdc3d4] font-mono mt-0.5">
-                                  <span>SKU: {art?.sku || 'N/A'}</span>
                                   {art?.unidad_medida && (
                                     <span className="text-slate-400 dark:text-[#a593b0]">({art.unidad_medida})</span>
                                   )}

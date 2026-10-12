@@ -28,6 +28,7 @@ import { Badge } from '@/components/ui/Badge';
 import { formatDate, formatDateTime, formatNumber, formatM3 } from '@/lib/utils';
 import { recepcionesApi } from '@/api/recepcionesApi';
 import { almacenApi } from '@/api/almacenApi';
+import { getDescripcionFull } from '@/api/articulosApi';
 import { NuevaRecepcionModal } from './NuevaRecepcionModal';
 import { RecursosDescargaModal } from './RecursosDescargaModal';
 import { BrotherLabelPrinterModal } from '@/components/common/BrotherLabelPrinterModal';
@@ -258,7 +259,7 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
       if (nextDetalle && nextTarea) {
         setFeedbackMsg({
           type: 'success',
-          text: `¡Artículo guardado! Pasando a controlar: ${nextDetalle.articulo?.sku || 'Siguiente'}...`,
+          text: `¡Artículo guardado! Pasando a controlar: ${nextDetalle.articulo?.nombre || 'Siguiente'}...`,
         });
 
         setTimeout(() => {
@@ -779,14 +780,15 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                           detalles.forEach((d: any) => {
                             const art = d.articulo || {};
                             const cantBultos = Math.max(1, Number(d.cantidad_esperada || d.cantidad_solicitada || 1));
-                            const skuCode = art.sku || 'SKU-TEXTIL';
+                            const artCode = art.nombre || art.sku || 'ART-TEXTIL';
+                            const artDesc = (art as any)?.descripcion_full || getDescripcionFull(art) || art.descripcion || art.nombre || 'Rollo de Tela';
 
                             for (let i = 1; i <= cantBultos; i++) {
                               listaGenerada.push({
-                                idSecuencia: `${skuCode}-${String(i).padStart(4, '0')}`,
+                                idSecuencia: `${artCode}-${String(i).padStart(4, '0')}`,
                                 secuenciaNum: i,
-                                sku: skuCode,
-                                nombreArticulo: art.nombre || 'Rollo de Tela',
+                                sku: artCode,
+                                nombreArticulo: artDesc,
                                 cliente: detailData.cliente?.razon_social || 'OPEN CARGO',
                                 medidaReal: Number(art.unidades_por_bulto || 50),
                                 medidaStd: Number(art.unidades_por_bulto || 50),
@@ -835,8 +837,11 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div>
-                            <span className="font-mono text-xs font-bold text-slate-900 dark:text-[#e5e2e1]">
-                              {det.articulo?.sku} - {det.articulo?.nombre}
+                            <span className="font-mono text-xs font-bold text-slate-900 dark:text-[#e5e2e1] block">
+                              {det.articulo?.nombre || 'Artículo'}
+                            </span>
+                            <span className="text-xs text-slate-600 dark:text-[#cdc3d4] block">
+                              {(det.articulo as any)?.descripcion_full || getDescripcionFull(det.articulo) || det.articulo?.descripcion || ''}
                             </span>
                             <div className="text-[11px] text-slate-600 dark:text-[#cdc3d4] flex items-center gap-1.5 mt-0.5">
                               <span>Lote:</span>
@@ -976,8 +981,11 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
 
             {/* Ficha Resumen Renglón */}
             <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-[#201f1f] border border-slate-200 dark:border-[#333333] text-xs space-y-1">
-              <div className="font-bold text-slate-900 dark:text-[#e5e2e1]">
-                {activeDetalle.articulo?.sku} - {activeDetalle.articulo?.nombre}
+              <div className="font-mono font-bold text-slate-900 dark:text-[#e5e2e1]">
+                {activeDetalle.articulo?.nombre || 'Artículo'}
+              </div>
+              <div className="text-xs text-slate-600 dark:text-[#cdc3d4]">
+                {(activeDetalle.articulo as any)?.descripcion_full || getDescripcionFull(activeDetalle.articulo) || activeDetalle.articulo?.descripcion || ''}
               </div>
               <div className="text-[11px] text-slate-600 dark:text-[#cdc3d4] flex items-center gap-3">
                 <span>

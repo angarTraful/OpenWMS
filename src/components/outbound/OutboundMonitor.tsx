@@ -51,6 +51,7 @@ import {
   isGoogleDriveConfigured,
 } from '@/lib/googleDriveService';
 import { ModalPortal } from '@/components/ui/ModalPortal';
+import { getDescripcionFull } from '@/api/articulosApi';
 import { NuevoPedidoModal } from './NuevoPedidoModal';
 import { ImportarPedidosModal } from './ImportarPedidosModal';
 import { PackingStationModal } from './PackingStationModal';
@@ -1011,8 +1012,11 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div>
-                              <span className="font-mono text-xs font-bold text-slate-900 dark:text-[#e5e2e1]">
-                                {det.articulo?.sku} - {det.articulo?.nombre}
+                              <span className="font-mono text-xs font-bold text-slate-900 dark:text-[#e5e2e1] block">
+                                {det.articulo?.nombre || 'Artículo'}
+                              </span>
+                              <span className="text-xs text-slate-600 dark:text-[#cdc3d4] block">
+                                {(det.articulo as any)?.descripcion_full || getDescripcionFull(det.articulo) || det.articulo?.descripcion || ''}
                               </span>
                               <div className="text-[10px] text-slate-500 dark:text-[#cdc3d4] font-mono mt-0.5">
                                 Emb: {det.articulo?.unidades_por_bulto || 1} un/bulto | Vol: {formatM3(det.articulo?.volumen_unitario_m3 || 0)}

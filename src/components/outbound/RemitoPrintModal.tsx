@@ -16,6 +16,8 @@ import { formatM3, formatNumber, formatDate, formatDateTime } from '@/lib/utils'
 import { pedidosApi } from '@/api/pedidosApi';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 
+import { getDescripcionFull } from '@/api/articulosApi';
+
 interface RemitoPrintModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -31,6 +33,8 @@ export const RemitoPrintModal: React.FC<RemitoPrintModalProps> = ({
 }) => {
   const [numeroRemito, setNumeroRemito] = useState<string>('');
   const [cae, setCae] = useState<string>('');
+  const [valorDeclaradoTotal, setValorDeclaradoTotal] = useState<number>(0);
+  const [sumMercaderiasDefault, setSumMercaderiasDefault] = useState<number>(0);
   const [remitoEmitido, setRemitoEmitido] = useState<any | null>(null);
   const [pedidoCompleto, setPedidoCompleto] = useState<any>(pedido);
   const [loading, setLoading] = useState(false);
@@ -57,13 +61,25 @@ export const RemitoPrintModal: React.FC<RemitoPrintModalProps> = ({
               : Promise.resolve(pedido),
           ]);
 
-          if (dataRemito) {
-            setRemitoEmitido(dataRemito);
-          } else {
-            setRemitoEmitido(null);
-          }
+          const targetPedido = dataPedido || pedido;
           if (dataPedido) {
             setPedidoCompleto(dataPedido);
+          }
+
+          // Calcular sumatoria de valor declarado de mercaderías como valor por defecto
+          const sumMercaderias = (targetPedido?.detalles || []).reduce((acc: number, d: any) => {
+            const cant = Number(d.cantidad_separada || d.cantidad_solicitada || 0);
+            const valDec = Number(d.articulo?.valor_declarado || 0);
+            return acc + (cant * valDec);
+          }, 0);
+          setSumMercaderiasDefault(sumMercaderias);
+
+          if (dataRemito) {
+            setRemitoEmitido(dataRemito);
+            setValorDeclaradoTotal(Number(dataRemito.valor_declarado_total) || sumMercaderias);
+          } else {
+            setRemitoEmitido(null);
+            setValorDeclaradoTotal(sumMercaderias);
           }
         } catch (err: any) {
           console.error('Error buscando remito o detalle:', err);
@@ -92,6 +108,7 @@ export const RemitoPrintModal: React.FC<RemitoPrintModalProps> = ({
         pedidoId: pedido.id,
         numeroRemitoRx: numeroRemito.trim(),
         cae: cae.trim() || undefined,
+        valorDeclaradoTotal: Number(valorDeclaradoTotal) || 0,
       });
 
       // Reload extended remito
@@ -208,6 +225,32 @@ export const RemitoPrintModal: React.FC<RemitoPrintModalProps> = ({
                     placeholder="ej: 72418930481234"
                     className="w-full px-3.5 py-2.5 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm text-slate-900 dark:text-[#e5e2e1] font-mono focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
                   />
+                </div>
+
+                {/* Valor Declarado Total Editable */}
+                <div className="p-3 rounded-lg bg-emerald-50/50 dark:bg-[#15271d]/30 border border-emerald-200/80 dark:border-[#235836] space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold text-slate-800 dark:text-[#e5e2e1]">
+                      Valor Declarado Total ($)
+                    </label>
+                    <span className="text-[10px] text-emerald-700 dark:text-[#69f0ae] font-mono font-medium">
+                      Suma mercaderías: ${formatNumber(sumMercaderiasDefault, 2)}
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={valorDeclaradoTotal}
+                      onChange={(e) => setValorDeclaradoTotal(Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="w-full pl-7 pr-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm text-slate-900 dark:text-[#e5e2e1] font-mono font-bold focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
+                    />
+                  </div>
+                  <span className="text-[10px] text-slate-500 dark:text-[#cdc3d4]/70 block">
+                    Por defecto toma la sumatoria de las mercaderías. Puedes editar este importe hasta el momento de generar el remito oficial.
+                  </span>
                 </div>
 
                 <div className="p-3 rounded bg-white dark:bg-[#131313] border border-slate-200 dark:border-[#333333] text-xs space-y-1 text-slate-600 dark:text-[#cdc3d4]">
@@ -338,7 +381,7 @@ export const RemitoPrintModal: React.FC<RemitoPrintModalProps> = ({
                 <table className="w-full border-collapse border border-slate-300 text-left">
                   <thead className="bg-slate-100 text-slate-800 font-bold border-b border-slate-300">
                     <tr>
-                      <th className="p-2 border-r border-slate-300 w-24">Código SKU</th>
+                      <th className="p-2 border-r border-slate-300 w-28">Código de Artículo</th>
                       <th className="p-2 border-r border-slate-300">Descripción del Artículo</th>
                       <th className="p-2 border-r border-slate-300 text-center w-24">Cant. Bultos</th>
                       <th className="p-2 border-r border-slate-300 text-right w-24">Peso (kg)</th>
@@ -354,11 +397,11 @@ export const RemitoPrintModal: React.FC<RemitoPrintModalProps> = ({
 
                       return (
                         <tr key={d.id}>
-                          <td className="p-2 font-mono border-r border-slate-300 text-[11px]">
-                            {art?.sku || 'SKU'}
+                          <td className="p-2 font-mono font-bold border-r border-slate-300 text-[11px] text-slate-900">
+                            {art?.nombre || art?.sku || 'Código'}
                           </td>
-                          <td className="p-2 border-r border-slate-300 font-medium">
-                            {art?.nombre || 'Artículo'}
+                          <td className="p-2 border-r border-slate-300 font-medium text-slate-800">
+                            {art ? (art.descripcion_full || getDescripcionFull(art) || art.descripcion || 'Artículo') : 'Artículo'}
                           </td>
                           <td className="p-2 text-center border-r border-slate-300 font-mono font-bold">
                             {cant}

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { formatNumber, formatDate } from '@/lib/utils';
 import { romaneoApi } from '@/api/romaneoApi';
+import { getDescripcionFull } from '@/api/articulosApi';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 
 interface PlanillaRomaneoPrintModalProps {
@@ -58,8 +59,8 @@ export const PlanillaRomaneoPrintModal: React.FC<PlanillaRomaneoPrintModalProps>
   
   // Calcular resumen por artículo
   const resumenPorArticulo = detalles.map((det: any) => {
-    const sku = det.articulo?.sku || 'N/A';
-    const nombre = det.articulo?.nombre || 'Producto sin nombre';
+    const sku = det.articulo?.nombre || det.articulo?.sku || 'N/A';
+    const nombre = (det.articulo as any)?.descripcion_full || getDescripcionFull(det.articulo) || det.articulo?.descripcion || det.articulo?.nombre || 'Producto';
     const unidad = det.articulo?.unidad_medida || 'mts';
     const bultosTotales = Number(det.cantidad_solicitada || 0);
     const medidaStd = Number(det.articulo?.unidades_por_bulto || 50);

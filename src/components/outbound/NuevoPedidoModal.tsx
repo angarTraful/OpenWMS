@@ -18,7 +18,7 @@ import {
   Warehouse,
 } from 'lucide-react';
 import { formatM3, formatNumber } from '@/lib/utils';
-import { articulosApi, Articulo } from '@/api/articulosApi';
+import { articulosApi, Articulo, getDescripcionFull } from '@/api/articulosApi';
 import { clientesApi } from '@/api/clientesApi';
 import { pedidosApi } from '@/api/pedidosApi';
 import { inventarioApi } from '@/api/inventarioApi';
@@ -723,7 +723,7 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
                               </option>
                               {articulos.map((a) => (
                                 <option key={a.id} value={a.id}>
-                                  [{a.sku}] {a.nombre} {a.unidad_medida ? `(${a.unidad_medida})` : ''}
+                                  [{a.nombre}] {(a as any).descripcion_full || getDescripcionFull(a) || a.descripcion || ''} {a.unidad_medida ? `(${a.unidad_medida})` : ''}
                                 </option>
                               ))}
                             </select>

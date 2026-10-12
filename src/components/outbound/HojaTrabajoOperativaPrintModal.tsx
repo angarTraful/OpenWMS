@@ -12,6 +12,7 @@ import {
 import { formatNumber, formatM3, formatDate, formatDateTime } from '@/lib/utils';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 import { OpenCargoSkylineLogo } from '@/components/common/OpenCargoSkylineLogo';
+import { getDescripcionFull } from '@/api/articulosApi';
 
 interface HojaTrabajoOperativaPrintModalProps {
   isOpen: boolean;
@@ -200,12 +201,11 @@ export const HojaTrabajoOperativaPrintModal: React.FC<HojaTrabajoOperativaPrintM
                           <td className="p-1.5 font-mono text-[10px] border-r border-black">
                             {det.lote_declarado || '26SJ0125-1'}
                           </td>
-                          <td className="p-1.5 font-bold uppercase border-r border-black">
-                            {art.sku || 'ART-001'}
-                            <span className="block text-[10px] font-normal text-slate-600">{art.nombre}</span>
+                          <td className="p-1.5 font-bold uppercase border-r border-black font-mono">
+                            {art.nombre || art.sku || 'ART-001'}
                           </td>
                           <td className="p-1.5 text-[10px] border-r border-black">
-                            {art.descripcion || '170X250 - 2PLZAS'}
+                            {(art as any).descripcion_full || getDescripcionFull(art) || art.descripcion || ''}
                           </td>
                           <td className="p-1.5 text-center font-semibold border-r border-black">
                             {ubicacion}

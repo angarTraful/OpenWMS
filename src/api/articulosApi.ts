@@ -17,6 +17,26 @@ export interface CategoriaConSubcategorias extends Categoria {
   subcategorias?: Subcategoria[];
 }
 
+/**
+ * Helper virtual para obtener la concatenación descripcion-color-marca_bulto.
+ * Se alimenta de la columna virtual `descripcion_full` o calcula el fallback en memoria.
+ */
+export function getDescripcionFull(art?: {
+  descripcion?: string | null;
+  color?: string | null;
+  marca_bulto?: string | null;
+  descripcion_full?: string | null;
+} | null): string {
+  if (!art) return '';
+  if (art.descripcion_full && art.descripcion_full.trim()) {
+    return art.descripcion_full.trim();
+  }
+  const parts = [art.descripcion, art.color, art.marca_bulto]
+    .map((s) => s?.trim())
+    .filter(Boolean);
+  return parts.join(' - ');
+}
+
 export const articulosApi = {
   // --- Artículos ---
   async listarPorCliente(clienteId: string) {
@@ -52,7 +72,7 @@ export const articulosApi = {
       .from('articulos')
       .select('*')
       .eq('cliente_id', clienteId)
-      .or(`sku.ilike.%${termino}%,codigo_barras.eq.${termino},nombre.ilike.%${termino}%`);
+      .or(`nombre.ilike.%${termino}%,descripcion.ilike.%${termino}%,ean13.eq.${termino},codigo_barras.eq.${termino},sku.ilike.%${termino}%`);
     if (error) throw error;
     return data;
   },
@@ -66,7 +86,7 @@ export const articulosApi = {
         categoria:categorias_articulos(id, nombre),
         subcategoria:subcategorias_articulos(id, nombre)
       `)
-      .order('sku', { ascending: true })
+      .order('nombre', { ascending: true })
       .range(0, 49999);
 
     if (params?.clienteId) {

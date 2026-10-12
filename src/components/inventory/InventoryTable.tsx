@@ -25,6 +25,7 @@ import { cn, formatNumber, formatM3, formatDate, formatDateTime } from '@/lib/ut
 import { Badge } from '@/components/ui/Badge';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 import { inventarioApi } from '@/api/inventarioApi';
+import { getDescripcionFull } from '@/api/articulosApi';
 import {
   TableContainer,
   SortableHeaderCell,
@@ -84,9 +85,8 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
   const [quickKardexArticulo, setQuickKardexArticulo] = useState<{
     articuloId: string;
     clienteId?: string;
-    nombre: string;
-    sku: string;
-    id_producto?: string;
+    codigo: string;
+    descripcion: string;
     color?: string;
     tipo_empaque?: string;
   } | null>(null);
@@ -842,7 +842,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
               {vistaActiva === 'articulo' && (
                 <tr>
                   <SortableHeaderCell
-                    label="Artículo & SKU / ID_Producto"
+                    label="Código de Artículo & Descripción"
                     field="sku"
                     currentSortField={sortBy}
                     sortAsc={sortAsc}
@@ -1100,19 +1100,13 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                             <div className="flex items-center gap-2">
                               <span className="w-2.5 h-2.5 rounded-full bg-[#dab9ff] shrink-0" />
                               <div className="min-w-0">
-                                <div className="font-semibold text-xs text-[#e5e2e1] group-hover:text-[#dab9ff] transition-colors truncate">
-                                  {item.articulo?.nombre || 'Artículo sin nombre'}
+                                <div className="font-mono font-bold text-xs text-[#dab9ff] group-hover:text-[#eedbff] transition-colors truncate">
+                                  {item.articulo?.nombre || 'Sin código'}
+                                </div>
+                                <div className="text-[11px] text-[#e5e2e1] truncate font-medium mt-0.5">
+                                  {item.articulo?.descripcion_full || getDescripcionFull(item.articulo) || item.articulo?.descripcion || ''}
                                 </div>
                                 <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#cdc3d4] flex-wrap mt-0.5">
-                                  <span className="font-bold text-[#dab9ff]">SKU: {item.articulo?.sku || '-'}</span>
-                                  {item.articulo?.id_producto && item.articulo.id_producto !== item.articulo.sku && (
-                                    <span className="text-[#978d9d]">(ID: {item.articulo.id_producto})</span>
-                                  )}
-                                  {item.articulo?.color && (
-                                    <span className="px-1.5 py-0.2 rounded text-[9px] bg-[#252424] text-[#cdc3d4] border border-[#333333]">
-                                      {item.articulo.color}
-                                    </span>
-                                  )}
                                   {item.articulo?.tipo_empaque && (
                                     <span className="px-1.5 py-0.2 rounded text-[9px] bg-[#1a1919] text-[#75d1ff] border border-[#75d1ff]/30">
                                       {item.articulo.tipo_empaque}
@@ -1120,7 +1114,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                                   )}
                                   {item.articulo?.rotacion_abc && (
                                     <span className="px-1 py-0.1 rounded text-[9px] bg-[#252424] border border-[#333333] font-bold text-[#dab9ff]">
-                                      {item.articulo.rotacion_abc}
+                                      Clase {item.articulo.rotacion_abc}
                                     </span>
                                   )}
                                 </div>
@@ -1217,9 +1211,8 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                                   setQuickKardexArticulo({
                                     articuloId: item.articulo_id,
                                     clienteId: item.cliente_id,
-                                    nombre: item.articulo?.nombre || 'Artículo',
-                                    sku: item.articulo?.sku || 'SKU',
-                                    id_producto: item.articulo?.id_producto,
+                                    codigo: item.articulo?.nombre || 'S/C',
+                                    descripcion: (item.articulo as any)?.descripcion_full || getDescripcionFull(item.articulo) || 'Artículo',
                                     color: item.articulo?.color,
                                     tipo_empaque: item.articulo?.tipo_empaque,
                                   });
@@ -1341,9 +1334,8 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                                 setQuickKardexArticulo({
                                   articuloId: item.articulo_id,
                                   clienteId: item.cliente_id,
-                                  nombre: item.articulo?.nombre || 'Artículo',
-                                  sku: item.articulo?.sku || 'SKU',
-                                  id_producto: item.articulo?.id_producto,
+                                  codigo: item.articulo?.nombre || 'S/C',
+                                  descripcion: (item.articulo as any)?.descripcion_full || getDescripcionFull(item.articulo) || 'Artículo',
                                   color: item.articulo?.color,
                                   tipo_empaque: item.articulo?.tipo_empaque,
                                 });
@@ -1701,16 +1693,11 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                         Movimientos de Kardex
                       </span>
                       <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-violet-100 text-violet-700 dark:bg-[#dab9ff]/20 dark:text-[#dab9ff] font-bold">
-                        SKU: {quickKardexArticulo.sku}
+                        Código: {quickKardexArticulo.codigo}
                       </span>
-                      {quickKardexArticulo.id_producto && quickKardexArticulo.id_producto !== quickKardexArticulo.sku && (
-                        <span className="text-[10px] font-mono text-slate-500 dark:text-[#cdc3d4]">
-                          (ID: {quickKardexArticulo.id_producto})
-                        </span>
-                      )}
                     </div>
                     <h3 className="text-sm font-bold text-slate-900 dark:text-[#e5e2e1] mt-0.5">
-                      {quickKardexArticulo.nombre}
+                      {quickKardexArticulo.descripcion}
                     </h3>
                   </div>
                 </div>

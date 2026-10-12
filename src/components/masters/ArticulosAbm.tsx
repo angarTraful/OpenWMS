@@ -20,7 +20,7 @@ import {
   Upload,
 } from 'lucide-react';
 import type { Articulo } from '../../api/articulosApi';
-import { articulosApi } from '../../api/articulosApi';
+import { articulosApi, getDescripcionFull } from '../../api/articulosApi';
 import { supabase } from '../../api/supabaseClient';
 import type { Cliente } from '../../api/clientesApi';
 import { ArticuloModal } from './ArticuloModal';
@@ -160,8 +160,8 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
       // Búsqueda global
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
-        const sku = (art.id_producto || art.sku || '').toLowerCase();
         const nom = (art.nombre || '').toLowerCase();
+        const descFull = (art.descripcion_full || getDescripcionFull(art) || art.descripcion || '').toLowerCase();
         const bar = (art.ean13 || art.codigo_barras || '').toLowerCase();
         const cli = (art.cliente?.razon_social || '').toLowerCase();
         const col = (art.color || '').toLowerCase();
@@ -169,8 +169,8 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
         const cat = (art.categoria?.nombre || '').toLowerCase();
         const sub = (art.subcategoria?.nombre || '').toLowerCase();
         if (
-          !sku.includes(term) &&
           !nom.includes(term) &&
+          !descFull.includes(term) &&
           !bar.includes(term) &&
           !cli.includes(term) &&
           !col.includes(term) &&
@@ -184,16 +184,16 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
 
       // Column Filters
       if (columnFilters.sku.trim()) {
-        const fSku = columnFilters.sku.toLowerCase();
-        const sku = (art.sku || '').toLowerCase();
-        const bar = (art.codigo_barras || '').toLowerCase();
-        if (!sku.includes(fSku) && !bar.includes(fSku)) return false;
+        const fCodigo = columnFilters.sku.toLowerCase();
+        const nom = (art.nombre || '').toLowerCase();
+        const bar = (art.ean13 || art.codigo_barras || '').toLowerCase();
+        if (!nom.includes(fCodigo) && !bar.includes(fCodigo)) return false;
       }
       if (columnFilters.nombre.trim()) {
-        const fNom = columnFilters.nombre.toLowerCase();
-        const nom = (art.nombre || '').toLowerCase();
+        const fDesc = columnFilters.nombre.toLowerCase();
+        const descFull = (art.descripcion_full || getDescripcionFull(art) || art.descripcion || '').toLowerCase();
         const cat = (art.categoria?.nombre || '').toLowerCase();
-        if (!nom.includes(fNom) && !cat.includes(fNom)) return false;
+        if (!descFull.includes(fDesc) && !cat.includes(fDesc)) return false;
       }
       if (columnFilters.cliente.trim()) {
         const fCli = columnFilters.cliente.toLowerCase();
@@ -408,7 +408,7 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar SKU, código de barras, nombre..."
+              placeholder="Buscar por código de artículo, descripción, EAN13..."
               className="w-full pl-9 pr-3 py-1.5 rounded bg-[#131313] border border-[#333333] text-xs text-[#e5e2e1] focus:border-[#dab9ff] outline-none"
             />
           </div>
@@ -505,15 +505,15 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
             <thead>
               <tr className="border-b border-[#44424a] bg-[#201f1f] text-[#cdc3d4] font-medium text-[11px] uppercase tracking-wider">
                 <SortableHeaderCell
-                  label="ID_Producto / EAN13"
-                  sortKey="sku"
+                  label="Código de Artículo"
+                  sortKey="nombre"
                   currentSortField={sortField}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
                 />
                 <SortableHeaderCell
-                  label="Nombre / Cat / Color"
-                  sortKey="nombre"
+                  label="Descripción / Categoría"
+                  sortKey="descripcion"
                   currentSortField={sortField}
                   currentSortDirection={sortDirection}
                   onSort={handleSort}
@@ -558,14 +558,6 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
                   align="center"
                 />
                 <SortableHeaderCell
-                  label="Valor Declarado"
-                  sortKey="valor_declarado"
-                  currentSortField={sortField}
-                  currentSortDirection={sortDirection}
-                  onSort={handleSort}
-                  align="right"
-                />
-                <SortableHeaderCell
                   label="Estado"
                   sortKey="activo"
                   currentSortField={sortField}
@@ -581,14 +573,14 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
                     <ColumnFilterInput
                       value={columnFilters.sku}
                       onChange={(v) => handleColumnFilterChange('sku', v)}
-                      placeholder="Filtrar ID_Prod/EAN..."
+                      placeholder="Filtrar Código/EAN..."
                     />
                   </th>
                   <th className="p-2">
                     <ColumnFilterInput
                       value={columnFilters.nombre}
                       onChange={(v) => handleColumnFilterChange('nombre', v)}
-                      placeholder="Filtrar nombre/cat..."
+                      placeholder="Filtrar descripción..."
                     />
                   </th>
                   <th className="p-2">
@@ -613,7 +605,6 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
                       ]}
                     />
                   </th>
-                  <th className="p-2"></th>
                   <th className="p-2">
                     <ColumnFilterSelect
                       value={columnFilters.activo}
@@ -632,14 +623,14 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
             <tbody className="divide-y divide-[#44424a]">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-[#cdc3d4] text-xs">
+                  <td colSpan={9} className="py-12 text-center text-[#cdc3d4] text-xs">
                     <RefreshCw className="w-5 h-5 mx-auto animate-spin text-[#dab9ff] mb-2" />
                     Cargando catálogo de artículos...
                   </td>
                 </tr>
               ) : articulosOrdenados.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-[#cdc3d4] text-xs">
+                  <td colSpan={9} className="py-12 text-center text-[#cdc3d4] text-xs">
                     <Package className="w-8 h-8 mx-auto text-[#978d9d] opacity-40 mb-2" />
                     No se encontraron artículos con los filtros aplicados.
                   </td>
@@ -648,7 +639,7 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
                 paginatedArticulos.map((art) => (
                   <tr key={art.id} className="hover:bg-[#201f1f]/50 transition-colors">
                     <td className="py-1.5 px-2.5">
-                      <div className="font-mono font-bold text-[#dab9ff]">{art.id_producto || art.sku}</div>
+                      <div className="font-mono font-bold text-[#dab9ff]">{art.nombre}</div>
                       {(art.ean13 || art.codigo_barras) && (
                         <div className="text-[10px] font-mono text-[#cdc3d4] flex items-center gap-1 mt-0.5">
                           <Barcode className="w-3 h-3 text-[#978d9d]" />
@@ -658,7 +649,9 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
                     </td>
 
                     <td className="py-1.5 px-2.5">
-                      <div className="font-semibold text-[#e5e2e1]">{art.nombre}</div>
+                      <div className="font-semibold text-[#e5e2e1]">
+                        {art.descripcion_full || getDescripcionFull(art) || art.descripcion || 'Sin descripción'}
+                      </div>
                       <div className="text-[10px] text-[#cdc3d4] flex items-center gap-1.5 flex-wrap mt-0.5">
                         <span className="text-[#dab9ff]">{art.categoria?.nombre || 'General'}</span>
                         {art.subcategoria?.nombre && (
@@ -687,7 +680,9 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
                     </td>
 
                     <td className="py-1.5 px-2.5 text-center text-[#cdc3d4] font-mono text-[11px]">
-                      <div>{art.unidades_por_bulto} {art.unidad_medida} / {art.tipo_empaque || 'bulto'}</div>
+                      <div>
+                        {Number(art.unidades_por_bulto).toLocaleString('es-AR', { maximumFractionDigits: 3 })} {art.unidad_medida} / {art.tipo_empaque || 'bulto'}
+                      </div>
                       <div className="text-[10px] text-[#978d9d]">{art.cantidad_por_pallet || art.bultos_por_pallet} / plt</div>
                     </td>
 
@@ -714,10 +709,6 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
                       >
                         Clase {art.rotacion_abc}
                       </span>
-                    </td>
-
-                    <td className="py-1.5 px-2.5 text-right font-mono text-[#cdc3d4]">
-                      ${Number(art.valor_declarado).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
 
                     <td className="py-1.5 px-2.5 text-center">

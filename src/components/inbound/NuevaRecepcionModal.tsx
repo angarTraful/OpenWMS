@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { formatM3, formatNumber } from '@/lib/utils';
-import { articulosApi, Articulo } from '@/api/articulosApi';
+import { articulosApi, Articulo, getDescripcionFull } from '@/api/articulosApi';
 import { recepcionesApi } from '@/api/recepcionesApi';
 import { supabase } from '@/api/supabaseClient';
 import { QuickSelect } from '@/components/ui/QuickSelect';
@@ -96,7 +96,7 @@ const ArticuloSearchPicker: React.FC<ArticuloSearchPickerProps> = ({
           <input
             type="text"
             disabled={disabled}
-            value={isOpen ? query : (selectedArt ? selectedArt.sku : query)}
+            value={isOpen ? query : (selectedArt ? selectedArt.nombre : query)}
             onChange={(e) => {
               setQuery(e.target.value);
               if (!isOpen) setIsOpen(true);
@@ -105,7 +105,7 @@ const ArticuloSearchPicker: React.FC<ArticuloSearchPickerProps> = ({
               setIsOpen(true);
               setQuery('');
             }}
-            placeholder="Buscar SKU o nombre..."
+            placeholder="Buscar código de artículo o descripción..."
             className="w-full pl-7 pr-6 py-1.5 text-xs rounded border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] focus:border-violet-500 dark:focus:border-[#dab9ff] outline-none truncate font-medium placeholder:text-slate-400 dark:placeholder:text-[#6b6471]"
           />
           <Search className="w-3.5 h-3.5 text-slate-400 dark:text-[#978d9d] absolute left-2 top-2 pointer-events-none" />
@@ -171,10 +171,10 @@ const ArticuloSearchPicker: React.FC<ArticuloSearchPickerProps> = ({
                   }`}
                 >
                   <span className="font-mono font-bold text-violet-700 dark:text-[#dab9ff] bg-slate-100 dark:bg-[#131313] px-1.5 py-0.5 rounded border border-slate-200 dark:border-[#333333] text-[10px] shrink-0">
-                    {art.sku}
+                    {art.nombre}
                   </span>
                   <div className="truncate flex-1">
-                    <div className="font-medium truncate text-xs">{art.nombre}</div>
+                    <div className="font-medium truncate text-xs">{(art as any).descripcion_full || getDescripcionFull(art) || art.descripcion || art.nombre}</div>
                     <div className="text-[10px] text-slate-400 dark:text-[#978d9d]">
                       {art.unidad_medida || 'UN'} {art.peso_unitario_kg ? `· ${art.peso_unitario_kg} kg` : ''} {art.volumen_unitario_m3 ? `· ${art.volumen_unitario_m3} m³` : ''}
                     </div>
@@ -1015,10 +1015,10 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
                             <div className="p-1 px-2.5 rounded bg-white dark:bg-[#131313] border border-slate-200 dark:border-[#333333] flex flex-col justify-center shadow-sm">
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <span className="font-mono text-[10px] font-bold px-1.5 py-0.2 rounded bg-violet-100 dark:bg-[#201330] text-violet-700 dark:text-[#dab9ff] border border-violet-200 dark:border-[#6b21a8]/60 shrink-0">
-                                  {(artSel as any).id_producto || artSel.sku}
-                                </span>
-                                <span className="font-semibold text-xs text-slate-900 dark:text-[#e5e2e1] truncate" title={artSel.nombre}>
                                   {artSel.nombre}
+                                </span>
+                                <span className="font-semibold text-xs text-slate-900 dark:text-[#e5e2e1] truncate" title={(artSel as any).descripcion_full || getDescripcionFull(artSel) || artSel.descripcion || artSel.nombre}>
+                                  {(artSel as any).descripcion_full || getDescripcionFull(artSel) || artSel.descripcion || artSel.nombre}
                                 </span>
                                 {(artSel as any).color && (
                                   <span className="px-1 rounded bg-violet-50 dark:bg-[#26133b] text-violet-700 dark:text-[#dab9ff] border border-violet-200 dark:border-[#6b21a8]/40 text-[9px] shrink-0">

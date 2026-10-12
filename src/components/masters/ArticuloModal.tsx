@@ -85,9 +85,9 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
   }, [clientesProp]);
 
   // 1. Identificación básica y cliente
-  const [idProducto, setIdProducto] = useState(''); // ID_Producto / SKU
+  const [codigoArticulo, setCodigoArticulo] = useState(''); // Código ingresado por el usuario (se almacena en nombre)
+  const [idProductoInterno, setIdProductoInterno] = useState(''); // Manejo exclusivamente interno (ID único)
   const [clienteId, setClienteId] = useState('');
-  const [nombre, setNombre] = useState(''); // Nombre_producto
   const [descripcion, setDescripcion] = useState('');
   const [color, setColor] = useState('');
   const [ean13, setEan13] = useState(''); // EAN13
@@ -101,7 +101,7 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
   // 3. Empaque y Presentación
   const [tipoEmpaque, setTipoEmpaque] = useState('caja');
   const [unidadMedida, setUnidadMedida] = useState('unidades');
-  const [unidadesPorBulto, setUnidadesPorBulto] = useState<number>(1);
+  const [unidadesPorBulto, setUnidadesPorBulto] = useState<number | string>(1);
   const [cantidadPorPallet, setCantidadPorPallet] = useState<number>(40);
 
   // 4. Métricas Físicas y Logísticas
@@ -140,8 +140,8 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
     if (isOpen) {
       if (articulo) {
         setClienteId(articulo.cliente_id || '');
-        setIdProducto((articulo as any).id_producto || articulo.sku || '');
-        setNombre(articulo.nombre || '');
+        setCodigoArticulo(articulo.nombre || '');
+        setIdProductoInterno((articulo as any).id_producto || articulo.sku || '');
         setDescripcion(articulo.descripcion || '');
         setColor((articulo as any).color || '');
         setEan13((articulo as any).ean13 || articulo.codigo_barras || '');
@@ -152,7 +152,7 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
 
         setTipoEmpaque((articulo as any).tipo_empaque || 'caja');
         setUnidadMedida(articulo.unidad_medida || 'unidades');
-        setUnidadesPorBulto(Number(articulo.unidades_por_bulto) || 1);
+        setUnidadesPorBulto(articulo.unidades_por_bulto !== undefined && articulo.unidades_por_bulto !== null ? articulo.unidades_por_bulto : 1);
         setCantidadPorPallet(
           Number((articulo as any).cantidad_por_pallet) || Number(articulo.bultos_por_pallet) || 40
         );
@@ -171,8 +171,8 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
         setActivo(articulo.activo ?? true);
       } else {
         setClienteId(defaultClienteId || (clientesProp[0]?.id ?? ''));
-        setIdProducto('');
-        setNombre('');
+        setCodigoArticulo('');
+        setIdProductoInterno('');
         setDescripcion('');
         setColor('');
         setEan13('');
@@ -246,12 +246,12 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
       setErrorMsg('Debe seleccionar el cliente depositante dueño del artículo.');
       return;
     }
-    if (!idProducto.trim()) {
-      setErrorMsg('El campo ID_Producto / SKU es obligatorio.');
+    if (!codigoArticulo.trim()) {
+      setErrorMsg('El Código de Artículo es obligatorio.');
       return;
     }
-    if (!nombre.trim()) {
-      setErrorMsg('El Nombre del Producto es obligatorio.');
+    if (Number(unidadesPorBulto) <= 0) {
+      setErrorMsg('Las Unidades por Bulto deben ser mayores a cero.');
       return;
     }
     if (medidaM3 < 0) {
@@ -265,23 +265,33 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
 
     setLoading(true);
     try {
-      const skuLimpio = idProducto.trim().toUpperCase();
+      const codLimpio = codigoArticulo.trim();
+      // id_producto se mantiene o se genera internamente sin mostrárselo al usuario
+      const idProdInterno =
+        idProductoInterno.trim() ||
+        (articulo as any)?.id_producto ||
+        `${clienteId.slice(0, 8)}_${codLimpio.toUpperCase().replace(/\s+/g, '_')}`;
+
+      const descFull = [descripcion.trim(), color.trim(), marcaBulto.trim()]
+        .filter(Boolean)
+        .join(' - ');
 
       const baseData: any = {
         cliente_id: clienteId,
-        id_producto: skuLimpio,
-        sku: skuLimpio,
-        nombre: nombre.trim(),
+        id_producto: idProdInterno,
+        sku: (articulo as any)?.sku || idProdInterno,
+        nombre: codLimpio,
         descripcion: descripcion.trim() || null,
         color: color.trim() || null,
-        categoria_id: categoriaId || null,
-        subcategoria_id: subcategoriaId || null,
         marca_bulto: marcaBulto.trim() || null,
+        descripcion_full: descFull || null,
         ean13: ean13.trim() || null,
         codigo_barras: ean13.trim() || null,
+        categoria_id: categoriaId || null,
+        subcategoria_id: subcategoriaId || null,
         tipo_empaque: tipoEmpaque,
         unidad_medida: unidadMedida,
-        unidades_por_bulto: Number(unidadesPorBulto) || 1,
+        unidades_por_bulto: Number(unidadesPorBulto) > 0 ? Number(unidadesPorBulto) : 1,
         cantidad_por_pallet: Number(cantidadPorPallet) || 1,
         bultos_por_pallet: Math.max(1, Math.round(Number(cantidadPorPallet) || 1)),
         peso_gw: Number(pesoGw) || 0,
@@ -314,7 +324,7 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
     }
   };
 
-  const isFormDirty = Boolean(idProducto || nombre || ean13);
+  const isFormDirty = Boolean(idProductoInterno || codigoArticulo || ean13);
 
   return (
     <ModalPortal
@@ -357,7 +367,7 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
               </div>
             )}
 
-            {/* Bloque 1: Cliente & Identificación Principal (ID_Producto, EAN13, Nombre, Color) */}
+            {/* Bloque 1: Cliente & Código de Artículo */}
             <div className="space-y-3">
               <div className="flex items-center justify-between border-b border-slate-200 dark:border-[#2e2e2e] pb-1">
                 <span className="text-[11px] font-bold text-violet-700 dark:text-[#dab9ff] uppercase tracking-wider flex items-center gap-1.5">
@@ -384,20 +394,23 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                 }))}
               />
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* ID_Producto */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Código de Artículo (nombre en el modelo de datos) */}
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
-                    ID_Producto / SKU <span className="text-rose-500 dark:text-[#ffb4ab]">*</span>
+                    Código de Artículo <span className="text-rose-500 dark:text-[#ffb4ab]">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    value={idProducto}
-                    onChange={(e) => setIdProducto(e.target.value.toUpperCase())}
-                    placeholder="ART-2026-001"
+                    value={codigoArticulo}
+                    onChange={(e) => setCodigoArticulo(e.target.value)}
+                    placeholder="ej: ART-001, 1024, COD-X, TORN-8..."
                     className="w-full px-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs font-mono font-bold text-violet-700 dark:text-[#dab9ff] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
                   />
+                  <span className="text-[10px] text-slate-500 dark:text-[#978d9d] mt-0.5 block">
+                    Código de producto asignado por el cliente. Se utiliza en todas las vistas y reportes.
+                  </span>
                 </div>
 
                 {/* EAN13 */}
@@ -415,8 +428,35 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                     />
                     <Barcode className="w-4 h-4 text-slate-400 dark:text-[#978d9d] absolute left-2.5 top-2.5 pointer-events-none" />
                   </div>
+                  <span className="text-[10px] text-slate-500 dark:text-[#978d9d] mt-0.5 block">
+                    Código de barras para pistola RF o escáner (opcional).
+                  </span>
                 </div>
+              </div>
+            </div>
 
+            {/* Bloque 2: Características, Descripción & Campo Virtual descripcion_full */}
+            <div className="p-3.5 rounded bg-slate-50 dark:bg-[#201f1f] border border-slate-200 dark:border-[#333333] space-y-3">
+              <span className="text-[11px] font-bold text-violet-700 dark:text-[#dab9ff] uppercase tracking-wider block flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-violet-600 dark:text-[#dab9ff]" />
+                <span>2. Descripción, Atributos & Clasificación</span>
+              </span>
+
+              {/* Descripcion Base */}
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
+                  Descripción Base del Artículo
+                </label>
+                <input
+                  type="text"
+                  value={descripcion}
+                  onChange={(e) => setDescripcion(e.target.value)}
+                  placeholder="ej: Acolchado microfibra térmico 2 plazas, Tornillo hexagonal..."
+                  className="w-full px-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Color */}
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
@@ -427,52 +467,49 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                       type="text"
                       value={color}
                       onChange={(e) => setColor(e.target.value)}
-                      placeholder="Azul, Negro, Blanco..."
+                      placeholder="ej: Azul, Gris, Negro..."
                       className="w-full pl-8 pr-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
                     />
                     <Palette className="w-3.5 h-3.5 text-slate-400 dark:text-[#978d9d] absolute left-2.5 top-2.5 pointer-events-none" />
                   </div>
                 </div>
+
+                {/* Marca de Bulto */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
+                    Marca de Bulto (Shipping Mark)
+                  </label>
+                  <input
+                    type="text"
+                    value={marcaBulto}
+                    onChange={(e) => setMarcaBulto(e.target.value)}
+                    placeholder="ej: POSTO BLANCO, ACINDAR..."
+                    className="w-full px-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs font-mono text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
+                  />
+                </div>
               </div>
 
-              {/* Nombre_producto */}
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
-                  Nombre del Producto (Nombre_producto) <span className="text-rose-500 dark:text-[#ffb4ab]">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={nombre}
-                  onChange={(e) => setNombre(e.target.value)}
-                  placeholder="Denominación comercial o técnica completa..."
-                  className="w-full px-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs font-semibold text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
-                />
+              {/* Vista previa en tiempo real de descripcion_full */}
+              <div className="p-2.5 rounded bg-violet-50 dark:bg-[#201330] border border-violet-200 dark:border-[#522b7c] flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <span className="text-[10px] font-bold text-violet-700 dark:text-[#dab9ff] uppercase tracking-wider block">
+                    Descripción Completa Virtual (descripcion - color - marca_bulto):
+                  </span>
+                  <p className="text-xs font-semibold text-slate-900 dark:text-[#e5e2e1] mt-0.5 truncate">
+                    {[descripcion.trim(), color.trim(), marcaBulto.trim()].filter(Boolean).join(' - ') || (
+                      <span className="text-slate-400 dark:text-[#978d9d] font-normal italic">
+                        Sin datos suficientes aún para la concatenación
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-violet-200/60 dark:bg-[#3d1964] text-violet-800 dark:text-[#dab9ff] shrink-0 border border-violet-300 dark:border-[#6b21a8] font-bold">
+                  Virtual
+                </span>
               </div>
 
-              {/* Descripcion */}
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
-                  Descripción Detallada
-                </label>
-                <textarea
-                  rows={2}
-                  value={descripcion}
-                  onChange={(e) => setDescripcion(e.target.value)}
-                  placeholder="Especificaciones adicionales, requerimientos especiales de manipulación..."
-                  className="w-full px-3 py-1.5 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
-                />
-              </div>
-            </div>
-
-            {/* Bloque 2: Clasificación en Maestros (Categoria tbl, SubCategoria tbl, Marca de Bulto) */}
-            <div className="p-3.5 rounded bg-slate-50 dark:bg-[#201f1f] border border-slate-200 dark:border-[#333333] space-y-3">
-              <span className="text-[11px] font-bold text-violet-700 dark:text-[#dab9ff] uppercase tracking-wider block flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-violet-600 dark:text-[#dab9ff]" />
-                <span>2. Clasificación Maestro & Marca de Bulto</span>
-              </span>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Categoría & Subcategoría */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200 dark:border-[#333333]">
                 {/* Categoria(tbl) */}
                 <div>
                   <QuickSelect
@@ -531,24 +568,10 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                     ))}
                   </select>
                 </div>
-
-                {/* Marca de Bulto */}
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
-                    Marca de Bulto (Shipping Mark)
-                  </label>
-                  <input
-                    type="text"
-                    value={marcaBulto}
-                    onChange={(e) => setMarcaBulto(e.target.value)}
-                    placeholder="ej: CARTON-A / FRAGIL"
-                    className="w-full px-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs font-mono text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
-                  />
-                </div>
               </div>
             </div>
 
-            {/* Bloque 3: Presentación, Tipo de Empaque y Unidades */}
+            {/* Bloque 3: Presentación, Tipo de Empaque y Unidades con Decimales */}
             <div className="p-3.5 rounded bg-slate-50 dark:bg-[#201f1f] border border-slate-200 dark:border-[#333333] space-y-3">
               <span className="text-[11px] font-bold text-violet-700 dark:text-[#dab9ff] uppercase tracking-wider block flex items-center gap-1.5">
                 <Box className="w-3.5 h-3.5 text-violet-600 dark:text-[#dab9ff]" />
@@ -592,26 +615,30 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                   </select>
                 </div>
 
-                {/* UnidadesXbulto */}
+                {/* UnidadesXbulto con soporte para decimales */}
                 <div>
                   <label className="block text-[10px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
-                    UnidadesXbulto <span className="text-rose-500 dark:text-[#ffb4ab]">*</span>
+                    Unidades x Bulto <span className="text-rose-500 dark:text-[#ffb4ab]">*</span>
                   </label>
                   <input
                     type="number"
-                    min="1"
-                    step="1"
+                    min="0.001"
+                    step="any"
                     required
                     value={unidadesPorBulto}
-                    onChange={(e) => setUnidadesPorBulto(Math.max(1, parseInt(e.target.value) || 1))}
+                    onChange={(e) => setUnidadesPorBulto(e.target.value)}
+                    placeholder="1.0"
                     className="w-full px-2.5 py-1.5 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs font-mono font-bold text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
                   />
+                  <span className="text-[9px] text-slate-500 dark:text-[#cdc3d4] mt-0.5 block">
+                    Admite decimales (ej: metros, kilos, litros).
+                  </span>
                 </div>
 
                 {/* CantidadXpallet */}
                 <div>
                   <label className="block text-[10px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
-                    CantidadXpallet <span className="text-rose-500 dark:text-[#ffb4ab]">*</span>
+                    Cantidad x Pallet <span className="text-rose-500 dark:text-[#ffb4ab]">*</span>
                   </label>
                   <input
                     type="number"
@@ -622,6 +649,9 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                     onChange={(e) => setCantidadPorPallet(Math.max(1, parseInt(e.target.value) || 1))}
                     className="w-full px-2.5 py-1.5 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs font-mono font-bold text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
                   />
+                  <span className="text-[9px] text-slate-500 dark:text-[#cdc3d4] mt-0.5 block">
+                    Bultos por pallet estándar.
+                  </span>
                 </div>
               </div>
             </div>
@@ -631,12 +661,12 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold text-violet-800 dark:text-[#dab9ff] uppercase tracking-wider flex items-center gap-1.5">
                   <Scale className="w-3.5 h-3.5 text-violet-600 dark:text-[#dab9ff]" />
-                  <span>4. Peso GW, Medida M³ y Factor Estiba %</span>
+                  <span>4. Peso GW, Medida M³ y Rotación ABC</span>
                 </span>
                 <span className="text-[10px] text-violet-600 dark:text-[#dab9ff] font-mono">Parámetros de Cobro & Almacenaje</span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 {/* PesoGW */}
                 <div>
                   <label className="block text-[10px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
@@ -651,9 +681,6 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                     onChange={(e) => setPesoGw(parseFloat(e.target.value) || 0)}
                     className="w-full px-2.5 py-1.5 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs font-mono font-bold text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
                   />
-                  <span className="text-[9px] text-slate-500 dark:text-[#cdc3d4] mt-0.5 block">
-                    Pallet completo ({cantidadPorPallet} bultos) ≈ {(pesoGw * cantidadPorPallet).toFixed(1)} Kg
-                  </span>
                 </div>
 
                 {/* MedidaM3 */}
@@ -670,9 +697,6 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                     onChange={(e) => setMedidaM3(parseFloat(e.target.value) || 0)}
                     className="w-full px-2.5 py-1.5 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs font-mono font-bold text-violet-700 dark:text-[#dab9ff] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
                   />
-                  <span className="text-[9px] text-slate-500 dark:text-[#cdc3d4] mt-0.5 block">
-                    Pallet completo ({cantidadPorPallet} bultos) ≈ {(medidaM3 * cantidadPorPallet).toFixed(3)} M³
-                  </span>
                 </div>
 
                 {/* Factor Estiba % */}
@@ -692,14 +716,9 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                     />
                     <span className="absolute right-3 top-1.5 text-xs text-slate-400 dark:text-[#978d9d] font-bold">%</span>
                   </div>
-                  <span className="text-[9px] text-slate-500 dark:text-[#cdc3d4] mt-0.5 block">
-                    Coeficiente de apilamiento / tolerancia de estiba
-                  </span>
                 </div>
-              </div>
 
-              {/* Rotación ABC y Valoración*/}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200 dark:border-[#442366]">
+                {/* Rotación ABC */}
                 <div>
                   <label className="block text-[10px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
                     Rotación ABC
@@ -709,15 +728,29 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                     onChange={(e) => setRotacionAbc(e.target.value as any)}
                     className="w-full px-2.5 py-1.5 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1] font-mono focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
                   >
-                    <option value="A">Clase A (Alta rotación / Muelle)</option>
-                    <option value="B">Clase B (Rotación media)</option>
-                    <option value="C">Clase C (Baja rotación / Rack alto)</option>
+                    <option value="A">Clase A (Muelle / Alta)</option>
+                    <option value="B">Clase B (Media)</option>
+                    <option value="C">Clase C (Baja / Rack alto)</option>
                   </select>
                 </div>
+              </div>
+            </div>
 
+            {/* Bloque 5: Parámetros Administrativos Internos (Valor Declarado / Seguro) & Estado */}
+            <div className="p-3.5 rounded bg-slate-50 dark:bg-[#181818] border border-slate-200 dark:border-[#2a2a2a] space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-600 dark:text-[#978d9d] uppercase tracking-wider">
+                  5. Parámetros Administrativos Internos (Póliza de Seguro)
+                </span>
+                <span className="text-[10px] text-slate-400 dark:text-[#7d7483]">
+                  Uso interno administrativo
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[10px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
-                    Valor Declarado
+                    Valor Declarado Unitario ($)
                   </label>
                   <div className="flex items-center gap-1">
                     <select
@@ -738,6 +771,9 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                       className="w-full px-2.5 py-1.5 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs font-mono text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
                     />
                   </div>
+                  <span className="text-[9px] text-slate-500 dark:text-[#cdc3d4] mt-0.5 block">
+                    No se muestra en tablas operativas. Se utiliza para calcular el seguro y el valor total default en remitos.
+                  </span>
                 </div>
 
                 <div className="flex flex-col justify-end">
@@ -748,7 +784,7 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                       onChange={(e) => setActivo(e.target.checked)}
                       className="w-4 h-4 rounded text-violet-600 dark:text-[#dab9ff] border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] focus:ring-0"
                     />
-                    <span className="font-semibold">Artículo Habilitado / Activo</span>
+                    <span className="font-semibold">Artículo Habilitado / Activo en Catálogo</span>
                   </label>
                 </div>
               </div>
