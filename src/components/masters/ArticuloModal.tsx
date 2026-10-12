@@ -521,8 +521,8 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                       {!categoriaId
                         ? 'Primero elija categoría'
                         : subcategoriasDisponibles.length === 0
-                        ? 'Sin subcategorías registradas'
-                        : 'Seleccione subcategoría...'}
+                          ? 'Sin subcategorías registradas'
+                          : 'Seleccione subcategoría...'}
                     </option>
                     {subcategoriasDisponibles.map((sub: any) => (
                       <option key={sub.id} value={sub.id}>
@@ -698,7 +698,7 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                 </div>
               </div>
 
-              {/* Rotación ABC y Valoración */}
+              {/* Rotación ABC y Valoración*/}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200 dark:border-[#442366]">
                 <div>
                   <label className="block text-[10px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase mb-1">
@@ -869,7 +869,7 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
           isOpen={modalClienteOpen}
           onClose={() => setModalClienteOpen(false)}
           cliente={null}
-          onSuccess={() => {}}
+          onSuccess={() => { }}
           onCreated={(nuevoCli) => {
             setClientesList((prev) => [...prev, nuevoCli]);
             setClienteId(nuevoCli.id);

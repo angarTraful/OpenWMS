@@ -55,7 +55,7 @@ export const MastersManagementView: React.FC<MastersManagementViewProps> = ({
     },
     {
       id: 'lotes' as const,
-      label: 'Lotes & Cuarentena',
+      label: 'Lotes & Procesos',
       icon: Calendar,
       desc: 'Control FEFO, vencimientos y bloqueos',
     },
@@ -90,11 +90,10 @@ export const MastersManagementView: React.FC<MastersManagementViewProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setActiveSubTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-all ${
-                  isActive
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold transition-all ${isActive
                     ? 'bg-[#dab9ff] text-[#460283] shadow-sm'
                     : 'text-[#cdc3d4] hover:text-[#e5e2e1] hover:bg-[#201f1f]'
-                }`}
+                  }`}
               >
                 <Icon className="w-3.5 h-3.5" />
                 <span>{tab.label}</span>

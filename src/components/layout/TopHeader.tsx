@@ -150,13 +150,13 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               <Warehouse className="w-3.5 h-3.5 text-slate-500 dark:text-[#cdc3d4] shrink-0" />
               <select
                 id="header-almacen-select"
-                aria-label="Seleccionar Almacén"
+                aria-label="Seleccionar Deposito"
                 value={selectedAlmacenId}
                 onChange={(e) => onSelectAlmacen(e.target.value)}
                 className="bg-transparent border-none text-slate-800 dark:text-[#e5e2e1] font-medium text-xs focus:outline-none cursor-pointer max-w-[150px] truncate"
               >
                 <option value="" className="bg-white dark:bg-[#1c1b1b] text-slate-800 dark:text-[#e5e2e1]">
-                  Todos los Almacenes
+                  Todos los Depositos
                 </option>
                 {almacenes.map((alm) => (
                   <option key={alm.id} value={alm.id} className="bg-white dark:bg-[#1c1b1b] text-slate-800 dark:text-[#e5e2e1]">
@@ -182,11 +182,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 }}
                 className="bg-transparent border-none text-slate-800 dark:text-[#e5e2e1] font-medium text-xs focus:outline-none cursor-pointer max-w-[170px] truncate"
               >
+                {/*
                 <option value="__NEW_CLIENT__" className="bg-violet-50 dark:bg-[#241138] text-violet-700 dark:text-[#dab9ff] font-bold">
                   ✨ + Registrar nuevo cliente...
-                </option>
+                </option>*/}
                 <option value="" className="bg-white dark:bg-[#1c1b1b] text-slate-800 dark:text-[#e5e2e1]">
-                  Todos los Clientes 3PL
+                  Todos los Clientes
                 </option>
                 {clientes.map((cli) => (
                   <option key={cli.id} value={cli.id} className="bg-white dark:bg-[#1c1b1b] text-slate-800 dark:text-[#e5e2e1]">

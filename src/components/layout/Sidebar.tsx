@@ -120,14 +120,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <div className="flex items-center gap-1.5">
                 <span className="font-extrabold tracking-tight text-base text-slate-900 dark:text-[#e5e2e1] group-hover:text-violet-600 dark:group-hover:text-[#dab9ff] transition-colors">
-                  OpenWMS
+                  Open Cargo WMS
                 </span>
                 <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-violet-50 dark:bg-[#241138] text-violet-700 dark:text-[#dab9ff] border border-violet-200 dark:border-[#5a2e8c]">
-                  3PL
+                  by SIGMA
                 </span>
               </div>
               <p className="text-[10px] text-slate-500 dark:text-[#978d9d] font-normal leading-tight mt-0.5 truncate">
-                Gestión Logística & M3
+                Gestión Operativa
               </p>
             </motion.div>
           )}
@@ -222,7 +222,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 dark:bg-[#75d1ff] opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 dark:bg-[#75d1ff]" />
               </span>
-              <span className="font-mono text-[10px] text-emerald-600 dark:text-[#75d1ff] font-semibold">PG-17 Live</span>
+              <span className="font-mono text-[10px] text-emerald-600 dark:text-[#75d1ff] font-semibold">LOGA Sistemas</span>
             </div>
             <span className="text-[10px] text-slate-400 dark:text-[#797280] font-mono">v1.2</span>
           </div>
