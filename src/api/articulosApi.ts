@@ -102,15 +102,35 @@ export const articulosApi = {
   },
 
   async crearArticulo(articulo: ArticuloInsert) {
-    const { data, error } = await supabase.from('articulos').insert(articulo).select().single();
-    if (error) throw error;
-    return data;
+    try {
+      const { data, error } = await supabase.from('articulos').insert(articulo).select().single();
+      if (error) throw error;
+      return data;
+    } catch (err: any) {
+      if (err.message?.includes('descripcion_full') || err.details?.includes('descripcion_full')) {
+        const { descripcion_full, ...rest } = articulo as any;
+        const { data, error } = await supabase.from('articulos').insert(rest).select().single();
+        if (error) throw error;
+        return data;
+      }
+      throw err;
+    }
   },
 
   async actualizarArticulo(id: string, cambios: ArticuloUpdate) {
-    const { data, error } = await supabase.from('articulos').update(cambios).eq('id', id).select().single();
-    if (error) throw error;
-    return data;
+    try {
+      const { data, error } = await supabase.from('articulos').update(cambios).eq('id', id).select().single();
+      if (error) throw error;
+      return data;
+    } catch (err: any) {
+      if (err.message?.includes('descripcion_full') || err.details?.includes('descripcion_full')) {
+        const { descripcion_full, ...rest } = cambios as any;
+        const { data, error } = await supabase.from('articulos').update(rest).eq('id', id).select().single();
+        if (error) throw error;
+        return data;
+      }
+      throw err;
+    }
   },
 
   async eliminarArticulo(id: string): Promise<{ softDelete: boolean }> {

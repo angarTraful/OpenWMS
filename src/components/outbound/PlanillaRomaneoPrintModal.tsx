@@ -51,8 +51,20 @@ export const PlanillaRomaneoPrintModal: React.FC<PlanillaRomaneoPrintModalProps>
   if (!isOpen || !pedido) return null;
 
   const handlePrint = () => {
+    document.body.classList.add('printing-modal');
     window.print();
   };
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      document.body.classList.remove('printing-modal');
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      document.body.classList.remove('printing-modal');
+    };
+  }, []);
 
   // Agrupar y calcular totales del romaneo
   const detalles = pedido.detalles || [];
@@ -101,8 +113,14 @@ export const PlanillaRomaneoPrintModal: React.FC<PlanillaRomaneoPrintModalProps>
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <div
+        data-print-container="true"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto print:static print:block print:p-0 print:m-0 print:bg-white print:backdrop-blur-none print:w-full print:h-auto print:overflow-visible"
+      >
+        <div
+          data-print-content="true"
+          className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden print:static print:block print:w-full print:max-w-none print:h-auto print:max-h-none print:border-none print:shadow-none print:rounded-none print:bg-white print:text-black print:overflow-visible print:m-0 print:p-0"
+        >
           
           {/* Header Modal - No Imprimible */}
           <div className="print:hidden p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
@@ -135,8 +153,11 @@ export const PlanillaRomaneoPrintModal: React.FC<PlanillaRomaneoPrintModalProps>
           </div>
 
           {/* Cuerpo Documento Imprimible */}
-          <div className="flex-1 overflow-y-auto p-8 bg-slate-900 print:bg-white print:text-black print:p-0">
-            <div className="max-w-3xl mx-auto bg-white text-slate-900 p-8 rounded-xl shadow-xl print:shadow-none print:p-0">
+          <div className="flex-1 overflow-y-auto p-8 bg-slate-900 print:bg-white print:text-black print:p-0 print:m-0 print:overflow-visible print:block print:w-full">
+            <div
+              data-print-sheet="true"
+              className="max-w-3xl print:max-w-none print:w-full mx-auto bg-white text-slate-900 p-8 rounded-xl shadow-xl print:shadow-none print:p-0 print:m-0 print:border-none print:rounded-none"
+            >
               
               {/* Header Imprimible */}
               <div className="border-b-2 border-slate-900 pb-6 mb-6">

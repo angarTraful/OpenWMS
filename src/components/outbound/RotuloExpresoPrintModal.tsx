@@ -35,16 +35,42 @@ export const RotuloExpresoPrintModal: React.FC<RotuloExpresoPrintModalProps> = (
   if (!isOpen || !pedido) return null;
 
   const handlePrint = () => {
+    document.body.classList.add('printing-modal');
     window.print();
   };
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      document.body.classList.remove('printing-modal');
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      document.body.classList.remove('printing-modal');
+    };
+  }, []);
 
   const destinatario = pedido.destinatario || {};
   const cliente = pedido.cliente || {};
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col">
+      <style>{`
+        @media print {
+          @page {
+            size: 100mm 62mm;
+            margin: 0 !important;
+          }
+        }
+      `}</style>
+      <div
+        data-print-container="true"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto print:static print:block print:p-0 print:m-0 print:bg-white print:backdrop-blur-none print:w-full print:h-auto print:overflow-visible"
+      >
+        <div
+          data-print-content="true"
+          className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col print:static print:block print:w-full print:max-w-none print:h-auto print:max-h-none print:border-none print:shadow-none print:rounded-none print:bg-white print:text-black print:overflow-visible print:m-0 print:p-0"
+        >
           
           {/* Header Modal */}
           <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60 print:hidden">

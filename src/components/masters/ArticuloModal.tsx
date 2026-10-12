@@ -63,14 +63,14 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
   isOpen,
   onClose,
   articulo,
-  clientes: clientesProp,
+  clientes: clientesProp = [],
   defaultClienteId,
   onSuccess,
   onCreated,
 }) => {
   const isEditing = Boolean(articulo);
 
-  const [clientesList, setClientesList] = useState<Cliente[]>(clientesProp);
+  const [clientesList, setClientesList] = useState<Cliente[]>(clientesProp || []);
   const [modalClienteOpen, setModalClienteOpen] = useState(false);
   const [modalCategoriaOpen, setModalCategoriaOpen] = useState(false);
   const [modalSubcategoriaOpen, setModalSubcategoriaOpen] = useState(false);
@@ -81,7 +81,7 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
   const [guardandoSubcat, setGuardandoSubcat] = useState(false);
 
   useEffect(() => {
-    setClientesList(clientesProp);
+    setClientesList(clientesProp || []);
   }, [clientesProp]);
 
   // 1. Identificación básica y cliente
@@ -170,14 +170,14 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
         setMoneda(articulo.moneda || '$');
         setActivo(articulo.activo ?? true);
       } else {
-        setClienteId(defaultClienteId || (clientesProp[0]?.id ?? ''));
+        setClienteId(defaultClienteId || (clientesProp?.[0]?.id ?? ''));
         setCodigoArticulo('');
         setIdProductoInterno('');
         setDescripcion('');
         setColor('');
         setEan13('');
 
-        setCategoriaId(categorias[0]?.id || '');
+        setCategoriaId(categorias?.[0]?.id || '');
         setSubcategoriaId('');
         setMarcaBulto('');
 

@@ -124,15 +124,33 @@ export const RemitoPrintModal: React.FC<RemitoPrintModalProps> = ({
   };
 
   const handlePrint = () => {
+    document.body.classList.add('printing-modal');
     window.print();
   };
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      document.body.classList.remove('printing-modal');
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      document.body.classList.remove('printing-modal');
+    };
+  }, []);
 
   if (!isOpen || !pedido) return null;
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 dark:bg-[#131313]/85 backdrop-blur-md animate-fade-in print:p-0 print:bg-white">
-      <div className="relative w-full max-w-4xl max-h-[96vh] rounded-md bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] shadow-2xl overflow-hidden flex flex-col text-slate-800 dark:text-[#e5e2e1] print:max-w-none print:max-h-none print:border-none print:shadow-none print:bg-white print:text-black">
+      <div
+        data-print-container="true"
+        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 dark:bg-[#131313]/85 backdrop-blur-md animate-fade-in print:static print:block print:p-0 print:m-0 print:bg-white print:backdrop-blur-none print:w-full print:h-auto print:overflow-visible"
+      >
+      <div
+        data-print-content="true"
+        className="relative w-full max-w-4xl max-h-[96vh] rounded-md bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] shadow-2xl overflow-hidden flex flex-col text-slate-800 dark:text-[#e5e2e1] print:static print:block print:w-full print:max-w-none print:h-auto print:max-h-none print:border-none print:shadow-none print:rounded-none print:bg-white print:text-black print:overflow-visible print:m-0 print:p-0"
+      >
         
         {/* Modal Top Bar (Hidden when printing) */}
         <div className="flex items-center justify-between px-6 py-3.5 border-b border-slate-200 dark:border-[#333333] bg-slate-50 dark:bg-[#201f1f] print:hidden">
@@ -174,7 +192,7 @@ export const RemitoPrintModal: React.FC<RemitoPrintModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 print:p-0 print:overflow-visible">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 print:p-0 print:m-0 print:overflow-visible print:block print:w-full">
           {errorMsg && (
             <div className="p-3.5 rounded bg-rose-50 border border-rose-200 text-rose-700 dark:bg-[#381015] dark:border-[#690005] dark:text-[#ffb4ab] text-sm flex items-start gap-3 print:hidden">
               <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-600 dark:text-[#ffb4ab] mt-0.5" />
@@ -289,7 +307,10 @@ export const RemitoPrintModal: React.FC<RemitoPrintModalProps> = ({
             </div>
           ) : (
             /* Printable Voucher Card (Simulates official legal shipping note) */
-            <div className="bg-white text-slate-900 p-6 sm:p-8 rounded-2xl shadow-md border border-slate-200 font-sans print:shadow-none print:border-none print:p-4 text-xs">
+            <div
+              data-print-sheet="true"
+              className="bg-white text-slate-900 p-6 sm:p-8 rounded-2xl shadow-md border border-slate-200 font-sans print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:w-full text-xs"
+            >
               
               {/* Header: Company & Voucher Info */}
               <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4 mb-4">

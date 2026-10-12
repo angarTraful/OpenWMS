@@ -28,8 +28,20 @@ export const HojaTrabajoOperativaPrintModal: React.FC<HojaTrabajoOperativaPrintM
   if (!isOpen || !pedido) return null;
 
   const handlePrint = () => {
+    document.body.classList.add('printing-modal');
     window.print();
   };
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      document.body.classList.remove('printing-modal');
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      document.body.classList.remove('printing-modal');
+    };
+  }, []);
 
   const detalles = pedido.detalles || [];
   const cliente = pedido.cliente || {};
@@ -56,8 +68,14 @@ export const HojaTrabajoOperativaPrintModal: React.FC<HojaTrabajoOperativaPrintM
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+      <div
+        data-print-container="true"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto print:static print:block print:p-0 print:m-0 print:bg-white print:backdrop-blur-none print:w-full print:h-auto print:overflow-visible"
+      >
+        <div
+          data-print-content="true"
+          className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden print:static print:block print:w-full print:max-w-none print:h-auto print:max-h-none print:border-none print:shadow-none print:rounded-none print:bg-white print:text-black print:overflow-visible print:m-0 print:p-0"
+        >
           
           {/* Header Modal - No Imprimible */}
           <div className="print:hidden p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
@@ -90,8 +108,11 @@ export const HojaTrabajoOperativaPrintModal: React.FC<HojaTrabajoOperativaPrintM
           </div>
 
           {/* Cuerpo Documento Imprimible A4 100% idéntico a la plantilla Open Cargo */}
-          <div className="flex-1 overflow-y-auto p-6 bg-slate-950 print:bg-white print:p-0">
-            <div className="max-w-3xl mx-auto bg-white text-black p-6 rounded-none shadow-xl print:shadow-none print:p-0">
+          <div className="flex-1 overflow-y-auto p-6 bg-slate-950 print:bg-white print:p-0 print:m-0 print:overflow-visible print:block print:w-full">
+            <div
+              data-print-sheet="true"
+              className="max-w-3xl print:max-w-none print:w-full mx-auto bg-white text-black p-6 rounded-none shadow-xl print:shadow-none print:p-0 print:m-0 print:border-none"
+            >
               
               {/* Header con Skyline y Marca */}
               <div className="flex justify-between items-end border-b-2 border-black pb-2 mb-3">

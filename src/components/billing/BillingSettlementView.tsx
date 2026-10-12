@@ -261,11 +261,11 @@ export const BillingSettlementView: React.FC<BillingSettlementViewProps> = ({
 
           {currentLiquidacion && (
             <button
-              onClick={() => window.print()}
+              onClick={() => setFacturaPrintModalOpen(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold border border-[#333333] bg-[#1c1b1b] hover:bg-[#201f1f] text-[#cdc3d4] hover:text-[#e5e2e1] transition-colors"
             >
               <Printer className="w-3.5 h-3.5 text-[#75d1ff]" />
-              <span>Imprimir Proforma</span>
+              <span>Imprimir Proforma / Factura</span>
             </button>
           )}
         </div>

@@ -41,7 +41,7 @@ interface ArticulosAbmProps {
 }
 
 export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
-  clientes,
+  clientes = [],
   selectedClienteId: initialClienteId,
   onRefreshParent,
 }) => {
@@ -800,6 +800,8 @@ export const ArticulosAbm: React.FC<ArticulosAbmProps> = ({
         isOpen={importModalOpen}
         onClose={() => setImportModalOpen(false)}
         tipoEntidad="articulos"
+        clientes={clientes}
+        defaultClienteId={clienteFilter || undefined}
         onSuccess={() => {
           cargarArticulos();
           if (onRefreshParent) onRefreshParent();

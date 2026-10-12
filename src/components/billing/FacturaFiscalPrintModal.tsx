@@ -74,13 +74,31 @@ export const FacturaFiscalPrintModal: React.FC<FacturaFiscalPrintModalProps> = (
   const qrUrlAfip = `https://www.afip.gob.ar/fe/qr/?p=${btoa(qrJson)}`;
 
   const handlePrint = () => {
+    document.body.classList.add('printing-modal');
     window.print();
   };
 
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      document.body.classList.remove('printing-modal');
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      document.body.classList.remove('printing-modal');
+    };
+  }, []);
+
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 dark:bg-black/85 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] rounded-md max-w-4xl w-full max-h-[96vh] flex flex-col overflow-hidden shadow-2xl">
+      <div
+        data-print-container="true"
+        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 dark:bg-black/85 backdrop-blur-sm animate-fadeIn print:static print:block print:p-0 print:m-0 print:bg-white print:backdrop-blur-none print:w-full print:h-auto print:overflow-visible"
+      >
+      <div
+        data-print-content="true"
+        className="bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] rounded-md max-w-4xl w-full max-h-[96vh] flex flex-col overflow-hidden shadow-2xl print:static print:block print:w-full print:max-w-none print:h-auto print:max-h-none print:border-none print:shadow-none print:rounded-none print:bg-white print:text-black print:overflow-visible print:m-0 print:p-0"
+      >
         {/* Modal Top Actions Toolbar */}
         <div className="p-3.5 bg-slate-50 dark:bg-[#201f1f] border-b border-slate-200 dark:border-[#333333] flex items-center justify-between print:hidden">
           <div className="flex items-center gap-2">
@@ -111,8 +129,11 @@ export const FacturaFiscalPrintModal: React.FC<FacturaFiscalPrintModalProps> = (
         </div>
 
         {/* Printable Invoice Container */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-100 dark:bg-[#181818] print:bg-white print:text-black print:p-0">
-          <div className="max-w-[800px] mx-auto bg-white text-black p-6 sm:p-8 rounded-sm shadow-xl print:shadow-none print:p-4 font-sans text-xs border border-gray-300">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-100 dark:bg-[#181818] print:bg-white print:text-black print:p-0 print:m-0 print:overflow-visible print:block print:w-full">
+          <div
+            data-print-sheet="true"
+            className="max-w-[800px] print:max-w-none print:w-full mx-auto bg-white text-black p-6 sm:p-8 rounded-sm shadow-xl print:shadow-none print:p-0 print:m-0 print:border-none print:rounded-none font-sans text-xs border border-gray-300"
+          >
             {/* Header AFIP: Emisor | Letra Central | Datos Comprobante */}
             <div className="relative border border-black rounded-t-sm p-4 grid grid-cols-2 gap-4">
               {/* Recuadro Central Letra */}

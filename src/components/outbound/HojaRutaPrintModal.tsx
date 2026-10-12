@@ -46,8 +46,20 @@ export const HojaRutaPrintModal: React.FC<HojaRutaPrintModalProps> = ({
   );
 
   const handlePrint = () => {
+    document.body.classList.add('printing-modal');
     window.print();
   };
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      document.body.classList.remove('printing-modal');
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      document.body.classList.remove('printing-modal');
+    };
+  }, []);
 
   const googleMapsUrl = despachosApi.generarGoogleMapsRutaCompletaUrl(
     paradas,
@@ -56,8 +68,14 @@ export const HojaRutaPrintModal: React.FC<HojaRutaPrintModalProps> = ({
 
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-fadeIn">
-        <div className="bg-white dark:bg-[#181818] border border-slate-200 dark:border-[#333333] rounded-2xl max-w-4xl w-full flex flex-col max-h-[92vh] shadow-2xl overflow-hidden">
+      <div
+        data-print-container="true"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-fadeIn print:static print:block print:p-0 print:m-0 print:bg-white print:backdrop-blur-none print:w-full print:h-auto print:overflow-visible"
+      >
+        <div
+          data-print-content="true"
+          className="bg-white dark:bg-[#181818] border border-slate-200 dark:border-[#333333] rounded-2xl max-w-4xl w-full flex flex-col max-h-[92vh] shadow-2xl overflow-hidden print:static print:block print:w-full print:max-w-none print:h-auto print:max-h-none print:border-none print:shadow-none print:rounded-none print:bg-white print:text-black print:overflow-visible print:m-0 print:p-0"
+        >
           {/* Barra Superior con Botón de Imprimir */}
           <div className="p-4 border-b border-slate-200 dark:border-[#2a2a2a] bg-slate-50 dark:bg-[#141414] flex items-center justify-between print:hidden">
             <div className="flex items-center gap-2">
@@ -95,10 +113,11 @@ export const HojaRutaPrintModal: React.FC<HojaRutaPrintModalProps> = ({
           </div>
 
           {/* Área Imprimible (Hoja Blanca para papel A4 estándar) */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100 dark:bg-[#0a0a0a]">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100 dark:bg-[#0a0a0a] print:p-0 print:m-0 print:bg-white print:overflow-visible print:block print:w-full">
             <div
               ref={printAreaRef}
-              className="bg-white text-black p-6 sm:p-8 rounded-xl shadow-lg max-w-3xl mx-auto space-y-6 font-sans text-xs print:p-0 print:shadow-none print:max-w-none print:w-full"
+              data-print-sheet="true"
+              className="bg-white text-black p-6 sm:p-8 rounded-xl shadow-lg max-w-3xl print:max-w-none print:w-full mx-auto space-y-6 font-sans text-xs print:p-0 print:m-0 print:shadow-none print:border-none print:rounded-none"
             >
               {/* Encabezado del Manifiesto */}
               <div className="flex items-start justify-between border-b-2 border-black pb-4">

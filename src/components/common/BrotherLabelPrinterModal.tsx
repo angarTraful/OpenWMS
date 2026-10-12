@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   X,
   Printer,
@@ -44,31 +44,49 @@ export const BrotherLabelPrinterModal: React.FC<BrotherLabelPrinterModalProps> =
   const itemsToPrint: EtiquetaRolloItem[] = (listaEtiquetas && listaEtiquetas.length > 0)
     ? listaEtiquetas
     : [
-        etiquetaData || {
-          idSecuencia: '89e252e6-1',
-          secuenciaNum: 1,
-          sku: '9b09399',
-          nombreArticulo: 'ACOLCHADO GRIS 16-3850TCX (170X250 - 2PLZAS)',
-          cliente: clienteNombre,
-          medidaReal: 54.5,
-          medidaStd: 50.0,
-          unidadMedida: 'mts',
-          tipoEmpaque: 'Rollo',
-          esExcepcion: true,
-          lote: 'd2334dd4',
-          nroPedidoOrOc: nroPedido,
-        },
-      ];
+      etiquetaData || {
+        idSecuencia: '89e252e6-1',
+        secuenciaNum: 1,
+        sku: '9b09399',
+        nombreArticulo: 'ACOLCHADO GRIS 16-3850TCX (170X250 - 2PLZAS)',
+        cliente: clienteNombre,
+        medidaReal: 54.5,
+        medidaStd: 50.0,
+        unidadMedida: 'mts',
+        tipoEmpaque: 'Rollo',
+        esExcepcion: true,
+        lote: 'd2334dd4',
+        nroPedidoOrOc: nroPedido,
+      },
+    ];
 
   const handleImprimir = () => {
+    document.body.classList.add('printing-modal');
     window.print();
   };
 
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      document.body.classList.remove('printing-modal');
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      document.body.classList.remove('printing-modal');
+    };
+  }, []);
+
   return (
     <ModalPortal>
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-        <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col">
-          
+      <div
+        data-print-container="true"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto print:static print:block print:p-0 print:m-0 print:bg-white print:backdrop-blur-none print:w-full print:h-auto print:overflow-visible"
+      >
+        <div
+          data-print-content="true"
+          className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col print:static print:block print:w-full print:max-w-none print:h-auto print:max-h-none print:border-none print:shadow-none print:rounded-none print:bg-white print:text-black print:overflow-visible print:m-0 print:p-0"
+        >
+
           {/* Header Modal */}
           <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/80 print:hidden">
             <div className="flex items-center gap-3">
@@ -135,7 +153,7 @@ export const BrotherLabelPrinterModal: React.FC<BrotherLabelPrinterModalProps> =
                 className="print-label-item bg-white text-black p-1 rounded-none shadow-2xl border-2 border-black w-[210px] h-[450px] flex flex-col justify-between overflow-hidden print:shadow-none print:border-2 print:border-black print:w-[29mm] print:h-[62mm]"
               >
                 <div className="flex flex-col flex-1 justify-between w-full">
-                  
+
                   {/* Frame 1: QR Code Prominente Superior */}
                   <div className="border border-black p-1 bg-white flex flex-col items-center justify-center flex-1">
                     <div className="border border-dashed border-black p-1 flex flex-col items-center justify-center bg-slate-50 w-full h-full">

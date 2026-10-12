@@ -22,6 +22,7 @@ interface ImportarMaestrosModalProps {
   tipo?: TipoImportacionMaestro;
   tipoEntidad?: TipoImportacionMaestro;
   clientes?: Cliente[];
+  defaultClienteId?: string;
   onSuccess: () => void;
 }
 
@@ -31,6 +32,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
   tipo,
   tipoEntidad,
   clientes: clientesProp = [],
+  defaultClienteId,
   onSuccess,
 }) => {
   const tipoFinal = tipo || tipoEntidad || 'clientes';
@@ -40,20 +42,40 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [dbClientes, setDbClientes] = useState<Cliente[]>(clientesProp);
+  const [selectedClienteId, setSelectedClienteId] = useState<string>(defaultClienteId || '');
   const [dbCategorias, setDbCategorias] = useState<any[]>([]);
   const [dbSubcategorias, setDbSubcategorias] = useState<any[]>([]);
   const [dbDestinatarios, setDbDestinatarios] = useState<any[]>([]);
+  const [dbArticulos, setDbArticulos] = useState<any[]>([]);
 
   // Asegurar que tengamos la lista actualizada de clientes, categorías, subcategorías y destinatarios
   useEffect(() => {
     if (isOpen) {
       if (clientesProp.length > 0) {
         setDbClientes(clientesProp);
+        if (!selectedClienteId) {
+          setSelectedClienteId(defaultClienteId || clientesProp[0].id);
+        }
       } else {
         clientesApi.listarClientes(true).then((list) => {
           setDbClientes(list || []);
+          if (!selectedClienteId && list && list.length > 0) {
+            setSelectedClienteId(defaultClienteId || list[0].id);
+          }
         }).catch((err) => {
           console.warn('No se pudieron obtener clientes para vincular:', err);
+        });
+      }
+
+      if (defaultClienteId) {
+        setSelectedClienteId(defaultClienteId);
+      }
+
+      if (tipoFinal === 'articulos') {
+        articulosApi.listarTodos().then((arts) => {
+          setDbArticulos(arts || []);
+        }).catch((err) => {
+          console.warn('No se pudieron obtener artículos previos:', err);
         });
       }
 
@@ -77,7 +99,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
         console.warn('No se pudieron obtener subcategorías para vincular:', err);
       });
     }
-  }, [isOpen, clientesProp, tipoFinal]);
+  }, [isOpen, clientesProp, tipoFinal, defaultClienteId]);
 
   if (!isOpen) return null;
 
@@ -88,9 +110,9 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
       templateName: 'plantilla_clientes_3pl.csv',
     },
     articulos: {
-      titulo: 'Importar Catálogo de Artículos & SKUs (CSV)',
-      desc: 'Subida masiva de SKUs, marcas, unidades por bulto, pesos GW, medida M³ y factor de estiba.',
-      templateName: 'plantilla_articulos_skus.csv',
+      titulo: 'Importar Catálogo de Artículos (CSV)',
+      desc: 'Carga masiva de artículos, descripciones extendidas, unidades con decimales y parámetros logísticos.',
+      templateName: 'plantilla_articulos.csv',
     },
     destinatarios: {
       titulo: 'Importar Destinatarios / Sucursales (CSV)',
@@ -115,8 +137,8 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
       headers = 'codigo,razon_social,identificacion_fiscal,email_contacto,telefono,direccion,unidad_negocio';
       exampleRow = '100,LBH HOME & HOTEL S.A.,30-71149359-6,info@lbh.com,5491160000000,Tucuman 2025 CIUDAD AUTONOMA BUENOS AIRES,Art. Blanqueria';
     } else if (tipoFinal === 'articulos') {
-      headers = 'id_producto,codigo_cliente,sku,nombre,descripcion,categoria,subcategoria,marca_bulto,ean13,tipo_empaque,unidad_medida,unidades_por_bulto,cantidad_por_pallet,peso_gw,medida_m3,factor_estiba,item_so,color,rotacion_abc';
-      exampleRow = 'PROD-1001,100,ART-1001,Acolchado Gris 2 Plazas,Acolchado microfibra termico,Textil,Dormitorio,POSTO BLANCO,7791234567890,caja,mts,50.0,40,12.5,0.045,0,SO-99281,Gris,B';
+      headers = 'codigo_articulo,descripcion,color,marca_bulto,codigo_cliente,categoria,subcategoria,ean13,tipo_empaque,unidad_medida,unidades_por_bulto,cantidad_por_pallet,peso_gw,medida_m3,factor_estiba,rotacion_abc,valor_declarado,item_so';
+      exampleRow = 'ART-1001,Acolchado Microfibra 2 Plazas,Gris,POSTO BLANCO,100,Textil,Dormitorio,7791234567890,caja,mts,50.5,40,12.5,0.045,0,B,15500.00,SO-99281\nART-1002,Sábana Algodón Queen,Blanco,ARCOIRIS,100,Textil,Dormitorio,7791234567891,caja,unidades,10,50,8.2,0.035,0,A,8200.00,SO-99282';
     } else if (tipoFinal === 'destinatarios') {
       headers = 'codigo_cliente,codigo_sucursal,razon_social,direccion_entrega,localidad,ciudad,telefono,contacto_recepcion,ventana_horaria,es_sucursal_propia';
       exampleRow = '100|101,,Centro Distribución Esteban Echeverría,Camino de Cintura 4500,9 de Abril,Esteban Echeverría,+541144445555,Muelle 12,06:00 a 12:00 hs,NO\n100,,Sucursal Central Palermo,Av. Santa Fe 3200,Palermo,CABA,+541148889900,Juan Perez,09:00 a 18:00 hs,SI';
@@ -282,63 +304,208 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
       } else if (tipoFinal === 'articulos') {
         let rowIdx = 0;
         const erroresRows: string[] = [];
+        let creadosCount = 0;
+        let actualizadosCount = 0;
+
+        // Asegurar que tengamos la lista previa de artículos para resolver duplicados/upsert
+        let articulosExistentes = dbArticulos;
+        if (articulosExistentes.length === 0) {
+          try {
+            articulosExistentes = await articulosApi.listarTodos();
+            setDbArticulos(articulosExistentes);
+          } catch (e) {
+            console.warn('No se pudieron precargar artículos:', e);
+          }
+        }
+
+        const parseNum = (val: any, defaultVal = 0) => {
+          if (val === undefined || val === null || val === '') return defaultVal;
+          const str = val.toString().replace('%', '').replace(',', '.').trim();
+          const num = Number(str);
+          return isNaN(num) ? defaultVal : num;
+        };
+
+        // Helper para generar códigos de categoría/subcategoría únicos
+        const generateCodeSlug = (input: string, prefix = 'CAT') => {
+          const clean = input
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-zA-Z0-9\s-]/g, '')
+            .trim()
+            .toUpperCase()
+            .replace(/\s+/g, '-');
+          return clean.substring(0, 15) || `${prefix}-${Math.floor(100 + Math.random() * 900)}`;
+        };
 
         for (const row of parsedRows) {
           rowIdx++;
           const raw = row._rawCols || [];
 
-          // Resolver cliente_id buscando por código depositante o usando el primero disponible
-          const codClienteTarget = (row.codigo_cliente || row.cliente || raw[0] || '').toString().trim().toLowerCase();
-          const cliFound = dbClientes.find((c) => c.codigo.toLowerCase() === codClienteTarget || c.razon_social.toLowerCase().includes(codClienteTarget));
-          const targetClienteId = cliFound ? cliFound.id : (dbClientes[0]?.id || '');
+          // 1. Resolver cliente depositante
+          const codClienteTarget = (
+            row.codigo_cliente ||
+            row.cliente ||
+            row.cod_cliente ||
+            row.cliente_codigo ||
+            row.depositante ||
+            raw[4] ||
+            ''
+          ).toString().trim().toLowerCase();
+
+          let targetClienteId = selectedClienteId;
+          if (codClienteTarget) {
+            const cliFound = dbClientes.find(
+              (c) =>
+                c.codigo.toLowerCase() === codClienteTarget ||
+                c.razon_social.toLowerCase().includes(codClienteTarget)
+            );
+            if (cliFound) {
+              targetClienteId = cliFound.id;
+            }
+          }
+
+          if (!targetClienteId && dbClientes.length > 0) {
+            targetClienteId = dbClientes[0].id;
+          }
 
           if (!targetClienteId) {
             throw new Error('No hay clientes registrados en el sistema para asociar los artículos.');
           }
 
-          const parseNum = (val: any, defaultVal = 0) => {
-            if (val === undefined || val === null || val === '') return defaultVal;
-            const str = val.toString().replace('%', '').replace(',', '.').trim();
-            const num = Number(str);
-            return isNaN(num) ? defaultVal : num;
-          };
+          // 2. Extraer Código de Artículo visible (se guarda en `nombre`)
+          const codigoArticulo = (
+            row.codigo_articulo ||
+            row.codigo ||
+            row.cod_articulo ||
+            row.cod ||
+            row.articulo ||
+            row.sku ||
+            row.nombre ||
+            row.nombre_producto ||
+            raw[0] ||
+            ''
+          ).toString().trim();
 
-          const idProdVal = (row.id_producto || row.id_art || row.id_prod || raw[0] || '').toString().trim() || undefined;
-          const rawSku = (row.sku || row.codigo || raw[1] || '').toString().trim();
-          const skuBase = rawSku || idProdVal || `ART-${rowIdx}`;
-          const nombreVal = (row.nombre || row.nombre_producto || row.descripcion || raw[2] || 'Artículo Sin Nombre').toString().trim();
-          const descVal = (row.descripcion || '').toString().trim() || undefined;
-          const colorVal = (row.color || '').toString().trim() || undefined;
-          const marcaVal = (row.marca_bulto || row.marca || '').toString().trim() || undefined;
-          const ean13Val = (row.ean13 || row.codigo_barras || row.ean || raw[8] || '').toString().trim() || undefined;
-          const empaqueVal = (row.tipo_empaque || row.tipoempaque || '').toString().trim() || undefined;
-          const unxBulto = parseNum(row.unidades_por_bulto || row.unidadesxbulto || raw[3], 1);
-          const umVal = (row.unidad_medida || row.unidadmedida || row.um || raw[4] || 'bulto').toString().trim();
-          const cantXPallet = parseNum(row.cantidad_por_pallet || row.cantidadxpallet, 0) || undefined;
-          const pesoGwVal = parseNum(row.peso_gw || row.pesogw || row.peso_unitario_kg || raw[5], 0);
-          const volM3Val = parseNum(row.medida_m3 || row.medidam3 || row.volumen_unitario_m3 || raw[6], 0);
-          const factorEstibaVal = parseNum(row.factor_estiba || row.factorestiba, 0);
-          const itemSoVal = (row.item_so || row.itemso || '').toString().trim() || undefined;
+          if (!codigoArticulo) {
+            erroresRows.push(`Fila ${rowIdx}: Código de artículo no especificado.`);
+            continue;
+          }
+
+          // 3. Extraer Descripción, Color y Marca
+          const descVal = (
+            row.descripcion ||
+            row.desc ||
+            row.detalle ||
+            row.nombre_producto ||
+            raw[1] ||
+            ''
+          ).toString().trim() || undefined;
+
+          const colorVal = (
+            row.color ||
+            row.variante ||
+            row.tono ||
+            raw[2] ||
+            ''
+          ).toString().trim() || undefined;
+
+          const marcaVal = (
+            row.marca_bulto ||
+            row.marca ||
+            row.brand ||
+            raw[3] ||
+            ''
+          ).toString().trim() || undefined;
+
+          // 4. Campo virtual/extendido descripcion_full
+          const descFullDirect = (row.descripcion_full || row.descripcion_completa || '').toString().trim();
+          const descFullCalc =
+            descFullDirect ||
+            [descVal, colorVal, marcaVal].filter(Boolean).join(' - ') ||
+            descVal ||
+            codigoArticulo;
+
+          // 5. id_producto interno único (aislado por cliente)
+          const idProdParam = (row.id_producto || row.id_prod || row.id_art || '').toString().trim();
+          const idProdInterno =
+            idProdParam ||
+            `${targetClienteId.slice(0, 8)}_${codigoArticulo.toUpperCase().replace(/\s+/g, '_')}`;
+          const skuInterno = (row.sku || '').toString().trim() || idProdInterno;
+
+          // 6. EAN13 / Barras
+          const ean13Val = (
+            row.ean13 ||
+            row.codigo_barras ||
+            row.ean ||
+            row.barcode ||
+            row.gtin ||
+            raw[7] ||
+            ''
+          ).toString().trim() || undefined;
+
+          // 7. Unidades por bulto (con soporte para decimales: metros, kilos, litros, etc.)
+          const unxBulto = parseNum(
+            row.unidades_por_bulto ||
+            row.unidadesxbulto ||
+            row.unidades_bulto ||
+            row.cant_x_bulto ||
+            raw[10],
+            1
+          );
+
+          // 8. Unidad de medida y empaque
+          const umVal = (
+            row.unidad_medida ||
+            row.unidadmedida ||
+            row.um ||
+            row.uom ||
+            raw[9] ||
+            'unidades'
+          ).toString().trim();
+
+          const empaqueVal = (
+            row.tipo_empaque ||
+            row.tipoempaque ||
+            row.empaque ||
+            raw[8] ||
+            'caja'
+          ).toString().trim();
+
+          // 9. Parámetros logísticos y cubicaje
+          const cantXPallet = parseNum(
+            row.cantidad_por_pallet || row.cantidadxpallet || row.bultos_por_pallet || raw[11],
+            40
+          );
+          const pesoGwVal = parseNum(
+            row.peso_gw || row.pesogw || row.peso_unitario_kg || row.peso || raw[12],
+            0
+          );
+          const volM3Val = parseNum(
+            row.medida_m3 || row.medidam3 || row.volumen_unitario_m3 || row.volumen || raw[13],
+            0
+          );
+          const factorEstibaVal = parseNum(row.factor_estiba || row.factorestiba || raw[14], 0);
+
+          let rotacionVal: 'A' | 'B' | 'C' = 'B';
+          const rotCandidate = (row.rotacion_abc || row.rotacion || raw[15] || 'B').toString().toUpperCase();
+          if (rotCandidate === 'A' || rotCandidate === 'B' || rotCandidate === 'C') {
+            rotacionVal = rotCandidate as 'A' | 'B' | 'C';
+          }
+
+          // 10. Valor declarado (para seguros y remitos)
+          const valorDecVal = parseNum(
+            row.valor_declarado || row.valordeclarado || row.valor || row.seguro || raw[16],
+            0
+          );
+          const itemSoVal = (row.item_so || row.itemso || raw[17] || '').toString().trim() || undefined;
           const imgUrlVal = (row.imagen_url || row.imagen || '').toString().trim() || undefined;
 
-          // Helper para generar códigos únicos sin caracteres extraños
-          const generateCodeSlug = (input: string, prefix = 'CAT') => {
-            const clean = input
-              .normalize('NFD')
-              .replace(/[\u0300-\u036f]/g, '')
-              .replace(/[^a-zA-Z0-9\s-]/g, '')
-              .trim()
-              .toUpperCase()
-              .replace(/\s+/g, '-');
-            return (clean.substring(0, 15) || `${prefix}-${Math.floor(100 + Math.random() * 900)}`);
-          };
-
-          // Resolver Categoria y Subcategoria de forma independiente
+          // 11. Resolver Categoría y Subcategoría de forma independiente
           let catIdFound: string | undefined = undefined;
           let subcatIdFound: string | undefined = undefined;
 
-          // 1. Categoría
-          const catInputRaw = (row.categoria || row.categoria_codigo || '').toString().trim();
+          // Categoría
+          const catInputRaw = (row.categoria || row.categoria_codigo || row.rubro || raw[5] || '').toString().trim();
           if (catInputRaw) {
             const catLower = catInputRaw.toLowerCase();
             let catMatched = dbCategorias.find(
@@ -355,7 +522,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
                     nombre: catInputRaw,
                     activo: true,
                   });
-                } catch (dupCatErr) {
+                } catch {
                   createdCat = await articulosApi.crearCategoria({
                     codigo: `${newCatCode}-${Math.floor(100 + Math.random() * 900)}`,
                     nombre: catInputRaw,
@@ -374,8 +541,8 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
             }
           }
 
-          // 2. Subcategoría (Independiente)
-          const subcatInputRaw = (row.subcategoria || row.subcategoria_codigo || '').toString().trim();
+          // Subcategoría
+          const subcatInputRaw = (row.subcategoria || row.subcategoria_codigo || row.familia || raw[6] || '').toString().trim();
           if (subcatInputRaw) {
             const subLower = subcatInputRaw.toLowerCase();
             let subMatched = dbSubcategorias.find(
@@ -393,7 +560,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
                     nombre: subcatInputRaw,
                     activo: true,
                   });
-                } catch (dupSubErr) {
+                } catch {
                   createdSub = await articulosApi.crearSubcategoria({
                     categoria_id: catIdFound || undefined,
                     codigo: `${newSubCode}-${Math.floor(100 + Math.random() * 900)}`,
@@ -413,62 +580,100 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
             }
           }
 
-          let rotacionVal: 'A' | 'B' | 'C' = 'B';
-          const rotCandidate = (row.rotacion_abc || row.rotacion || raw[7] || 'B').toString().toUpperCase();
-          if (rotCandidate === 'A' || rotCandidate === 'B' || rotCandidate === 'C') {
-            rotacionVal = rotCandidate as 'A' | 'B' | 'C';
-          }
+          // 12. Verificar si ya existe este artículo para este cliente (Upsert inteligente)
+          const artExistente = articulosExistentes.find(
+            (a) =>
+              a.cliente_id === targetClienteId &&
+              (
+                (a.id_producto && a.id_producto.toLowerCase() === idProdInterno.toLowerCase()) ||
+                (a.nombre && a.nombre.toLowerCase() === codigoArticulo.toLowerCase()) ||
+                (a.sku && a.sku.toLowerCase() === skuInterno.toLowerCase())
+              )
+          );
 
           const articlePayload = {
             cliente_id: targetClienteId,
-            id_producto: idProdVal,
-            sku: skuBase,
-            nombre: nombreVal,
+            id_producto: idProdInterno,
+            sku: skuInterno,
+            nombre: codigoArticulo,
             descripcion: descVal,
             color: colorVal,
             marca_bulto: marcaVal,
+            descripcion_full: descFullCalc,
             ean13: ean13Val,
+            codigo_barras: ean13Val,
             categoria_id: catIdFound,
             subcategoria_id: subcatIdFound,
             tipo_empaque: empaqueVal,
             unidad_medida: umVal,
-            unidades_por_bulto: unxBulto,
+            unidades_por_bulto: unxBulto > 0 ? unxBulto : 1,
             cantidad_por_pallet: cantXPallet,
+            bultos_por_pallet: Math.max(1, Math.round(cantXPallet)),
             peso_gw: pesoGwVal,
+            peso_unitario_kg: pesoGwVal,
             medida_m3: volM3Val,
+            volumen_unitario_m3: volM3Val,
             factor_estiba: factorEstibaVal,
             rotacion_abc: rotacionVal,
+            valor_declarado: valorDecVal,
             item_so: itemSoVal,
             imagen_url: imgUrlVal,
             activo: true,
           };
 
           try {
-            await articulosApi.crearArticulo(articlePayload);
-            creadosCount++;
+            if (artExistente) {
+              await articulosApi.actualizarArticulo(artExistente.id, articlePayload);
+              actualizadosCount++;
+            } else {
+              const nuevoArt = await articulosApi.crearArticulo(articlePayload);
+              articulosExistentes.push(nuevoArt);
+              creadosCount++;
+            }
           } catch (rowErr: any) {
-            // Si viola clave única por SKU duplicado en el mismo cliente, reintentar con SKU derivado único
-            if (rowErr.message?.includes('duplicate key') || rowErr.message?.includes('articulos_cliente_sku_uk')) {
+            // Si dio clave duplicada por concurrencia, intentar actualizar
+            if (rowErr.message?.includes('duplicate key') || rowErr.message?.includes('articulos_cliente_id_producto_uk')) {
               try {
-                const fallbackSku = `${skuBase}-${idProdVal || rowIdx}`;
-                await articulosApi.crearArticulo({
-                  ...articlePayload,
-                  sku: fallbackSku,
-                });
-                creadosCount++;
+                const matchEnDb = articulosExistentes.find(
+                  (a) => a.cliente_id === targetClienteId && a.id_producto === idProdInterno
+                );
+                if (matchEnDb) {
+                  await articulosApi.actualizarArticulo(matchEnDb.id, articlePayload);
+                  actualizadosCount++;
+                } else {
+                  const fallbackIdProd = `${idProdInterno}_${rowIdx}`;
+                  await articulosApi.crearArticulo({
+                    ...articlePayload,
+                    id_producto: fallbackIdProd,
+                    sku: fallbackIdProd,
+                  });
+                  creadosCount++;
+                }
               } catch (retryErr: any) {
-                console.warn(`Fila ${rowIdx} omitida por duplicado:`, retryErr);
-                erroresRows.push(`Fila ${rowIdx} (${nombreVal}): SKU o ID de producto duplicado.`);
+                console.warn(`Fila ${rowIdx} omitida:`, retryErr);
+                erroresRows.push(`Fila ${rowIdx} (${codigoArticulo}): ${retryErr.message}`);
               }
             } else {
               console.warn(`Fila ${rowIdx} falló:`, rowErr);
-              erroresRows.push(`Fila ${rowIdx} (${nombreVal}): ${rowErr.message}`);
+              erroresRows.push(`Fila ${rowIdx} (${codigoArticulo}): ${rowErr.message}`);
             }
           }
         }
 
-        if (erroresRows.length > 0 && creadosCount === 0) {
+        const totalProcesados = creadosCount + actualizadosCount;
+        if (erroresRows.length > 0 && totalProcesados === 0) {
           throw new Error(`Error en la importación: ${erroresRows[0]}`);
+        } else {
+          let msg = `¡Catálogo procesado! ${creadosCount} artículos nuevos creados`;
+          if (actualizadosCount > 0) {
+            msg += ` y ${actualizadosCount} actualizados`;
+          }
+          if (erroresRows.length > 0) {
+            msg += ` (${erroresRows.length} filas con advertencias).`;
+          } else {
+            msg += ` exitosamente.`;
+          }
+          setFeedback({ type: 'success', text: msg });
         }
       } else if (tipoFinal === 'destinatarios') {
         // Asegurar que tengamos la lista fresca de clientes
@@ -814,6 +1019,63 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
               </button>
             </div>
 
+            {/* Selector de Cliente por Defecto (Artículos) */}
+            {tipoFinal === 'articulos' && dbClientes.length > 0 && (
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#131313] border border-slate-200 dark:border-[#333333] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-[#e5e2e1] block">
+                    Cliente 3PL Predeterminado
+                  </label>
+                  <p className="text-[11px] text-slate-500 dark:text-[#cdc3d4] mt-0.5">
+                    Se asociará a los artículos del archivo que no indiquen <code className="font-mono bg-slate-200 dark:bg-[#201f1f] px-1 py-0.2 rounded">codigo_cliente</code> en el CSV.
+                  </p>
+                </div>
+                <select
+                  value={selectedClienteId}
+                  onChange={(e) => setSelectedClienteId(e.target.value)}
+                  className="w-full sm:w-64 px-3 py-2 text-xs font-medium rounded-lg bg-white dark:bg-[#1c1b1b] border border-slate-300 dark:border-[#44424a] text-slate-900 dark:text-[#e5e2e1] outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
+                >
+                  {dbClientes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      [{c.codigo}] {c.razon_social}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Informational banner for articulos */}
+            {tipoFinal === 'articulos' && (
+              <div className="p-3.5 rounded-xl bg-violet-50 dark:bg-[#20152b] border border-violet-200 dark:border-[#522b7c] text-xs text-violet-900 dark:text-[#dab9ff] space-y-1.5 shadow-sm">
+                <div className="flex items-center gap-2 font-bold">
+                  <span className="px-1.5 py-0.5 rounded bg-violet-200/70 dark:bg-[#522b7c] text-violet-900 dark:text-[#dab9ff] text-[10px] font-mono">
+                    NUEVO MODELO
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-violet-700 dark:text-[#dab9ff]" />
+                    <span>Estructura de Artículos & Unidades:</span>
+                  </div>
+                </div>
+                <ul className="text-[11px] space-y-1 text-slate-700 dark:text-[#cdc3d4] list-disc list-inside">
+                  <li>
+                    <b>Código de Artículo:</b> En <code className="bg-violet-100 dark:bg-[#341b4f] px-1 py-0.5 rounded font-mono">codigo_articulo</code> (o <code className="font-mono">codigo</code> / <code className="font-mono">nombre</code>) ingrese el código visible de su producto.
+                  </li>
+                  <li>
+                    <b>Descripción Full Virtual:</b> Al ingresar <code className="bg-violet-100 dark:bg-[#341b4f] px-1 py-0.5 rounded font-mono">descripcion</code>, <code className="bg-violet-100 dark:bg-[#341b4f] px-1 py-0.5 rounded font-mono">color</code> y <code className="bg-violet-100 dark:bg-[#341b4f] px-1 py-0.5 rounded font-mono">marca_bulto</code>, el sistema genera automáticamente el campo virtual <code className="font-mono">descripcion_full</code>.
+                  </li>
+                  <li>
+                    <b>Unidades x Bulto con Decimales:</b> Admite números fraccionarios (ej: <code className="font-mono">50.5</code> metros, <code className="font-mono">12.25</code> kg) tanto con coma como con punto.
+                  </li>
+                  <li>
+                    <b>Identificador Único por Cliente:</b> El sistema genera de forma transparente un ID único para evitar cualquier colisión si distintos clientes usan el mismo código de artículo.
+                  </li>
+                  <li>
+                    <b>Actualización Inteligente (Upsert):</b> Si el artículo ya existe para el cliente, se actualizarán sus datos y medidas sin generar duplicados.
+                  </li>
+                </ul>
+              </div>
+            )}
+
             {/* Informational banner for destinatarios N:M */}
             {tipoFinal === 'destinatarios' && (
               <div className="p-3.5 rounded-xl bg-purple-50 dark:bg-[#20152b] border border-purple-200 dark:border-[#522b7c] text-xs text-purple-900 dark:text-[#dab9ff] space-y-1.5 shadow-sm">
@@ -897,7 +1159,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
                         <th className="p-2">#</th>
                         {Object.keys(parsedRows[0])
                           .filter((k) => k !== '_rawCols')
-                          .slice(0, 8)
+                          .slice(0, 12)
                           .map((key) => (
                             <th key={key} className="p-2">
                               {key.replace(/_/g, ' ')}
@@ -911,7 +1173,7 @@ export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
                           <td className="p-2 font-mono text-slate-400">{i + 1}</td>
                           {Object.keys(parsedRows[0])
                             .filter((k) => k !== '_rawCols')
-                            .slice(0, 8)
+                            .slice(0, 12)
                             .map((key) => {
                               const val = String(row[key] ?? '');
                               if (key === 'es_sucursal_propia' || key === 'es_propia') {
