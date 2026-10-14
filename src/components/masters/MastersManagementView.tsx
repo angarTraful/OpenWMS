@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, Package, MapPin, Database, Tag, Calendar, Truck } from 'lucide-react';
+import { Building2, Package, MapPin, Database, Tag, Calendar, Truck, Users } from 'lucide-react';
 import type { Cliente } from '../../api/clientesApi';
 import type { Almacen } from '../../api/almacenApi';
 import { ClientesAbm } from './ClientesAbm';
@@ -8,8 +8,9 @@ import { CategoriasAbm } from './CategoriasAbm';
 import { DestinatariosAbm } from './DestinatariosAbm';
 import { LotesAbm } from './LotesAbm';
 import { UbicacionesAbm } from './UbicacionesAbm';
+import { UsuariosAbm } from './UsuariosAbm';
 
-export type MasterSubTab = 'clientes' | 'articulos' | 'categorias' | 'destinatarios' | 'lotes' | 'ubicaciones';
+export type MasterSubTab = 'clientes' | 'articulos' | 'categorias' | 'destinatarios' | 'lotes' | 'ubicaciones' | 'usuarios';
 
 interface MastersManagementViewProps {
   clientes: Cliente[];
@@ -64,6 +65,12 @@ export const MastersManagementView: React.FC<MastersManagementViewProps> = ({
       label: 'Ubicaciones & Racks',
       icon: MapPin,
       desc: 'Layout de pasillos, estantes, niveles y capacidades',
+    },
+    {
+      id: 'usuarios' as const,
+      label: 'Usuarios & Roles',
+      icon: Users,
+      desc: 'Cuentas de usuario, roles, accesos al bot y permisos 3PL',
     },
   ];
 
@@ -141,6 +148,13 @@ export const MastersManagementView: React.FC<MastersManagementViewProps> = ({
           <UbicacionesAbm
             almacenes={almacenes}
             selectedAlmacenId={selectedAlmacenId}
+            onRefreshParent={onRefresh}
+          />
+        )}
+
+        {activeSubTab === 'usuarios' && (
+          <UsuariosAbm
+            clientes={clientes}
             onRefreshParent={onRefresh}
           />
         )}

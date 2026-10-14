@@ -1,0 +1,5 @@
+curl --location 'https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/obtener_cliente_por_telefono' \
+--header 'Content-Type: application/json' \
+--header 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpncnNhZ2pocnd2dXRyeGloaG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNjM3MDYsImV4cCI6MjEwNTczOTcwNn0.05-pypAcRgCFv6cC2yi6_GcwRvoMtJQMG6500UjadD4' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpncnNhZ2pocnd2dXRyeGloaG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNjM3MDYsImV4cCI6MjEwNTczOTcwNn0.05-pypAcRgCFv6cC2yi6_GcwRvoMtJQMG6500UjadD4' \
+--data '{ "p_telefono": "1157617815" }'

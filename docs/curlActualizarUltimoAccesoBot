@@ -1,0 +1,24 @@
+# ==============================================================================
+# EJEMPLOS DE ACTUALIZACIÓN DE FechaUltimoAccesoBot EN SUPABASE
+# ==============================================================================
+
+# 1. Actualizar por TELÉFONO del cliente:
+curl --location 'https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/actualizar_ultimo_acceso_bot' \
+--header 'Content-Type: application/json' \
+--header 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpncnNhZ2pocnd2dXRyeGloaG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNjM3MDYsImV4cCI6MjEwNTczOTcwNn0.05-pypAcRgCFv6cC2yi6_GcwRvoMtJQMG6500UjadD4' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpncnNhZ2pocnd2dXRyeGloaG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNjM3MDYsImV4cCI6MjEwNTczOTcwNn0.05-pypAcRgCFv6cC2yi6_GcwRvoMtJQMG6500UjadD4' \
+--data '{ "p_identificador": "1157617815" }'
+
+# 2. Actualizar por ID (UUID) del cliente:
+curl --location 'https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/actualizar_ultimo_acceso_bot' \
+--header 'Content-Type: application/json' \
+--header 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpncnNhZ2pocnd2dXRyeGloaG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNjM3MDYsImV4cCI6MjEwNTczOTcwNn0.05-pypAcRgCFv6cC2yi6_GcwRvoMtJQMG6500UjadD4' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpncnNhZ2pocnd2dXRyeGloaG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNjM3MDYsImV4cCI6MjEwNTczOTcwNn0.05-pypAcRgCFv6cC2yi6_GcwRvoMtJQMG6500UjadD4' \
+--data '{ "p_identificador": "a9fde753-d3f2-4ff3-a20e-a61e63c05c60" }'
+
+# 3. Actualizar por CÓDIGO de cliente (ej: CLI-AND-001):
+curl --location 'https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/actualizar_ultimo_acceso_bot' \
+--header 'Content-Type: application/json' \
+--header 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpncnNhZ2pocnd2dXRyeGloaG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNjM3MDYsImV4cCI6MjEwNTczOTcwNn0.05-pypAcRgCFv6cC2yi6_GcwRvoMtJQMG6500UjadD4' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpncnNhZ2pocnd2dXRyeGloaG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNjM3MDYsImV4cCI6MjEwNTczOTcwNn0.05-pypAcRgCFv6cC2yi6_GcwRvoMtJQMG6500UjadD4' \
+--data '{ "p_identificador": "CLI-AND-001" }'

@@ -1917,11 +1917,175 @@ export type Database = {
           },
         ]
       }
+      roles: {
+        Row: {
+          activo: boolean
+          actualizado_en: string
+          creado_en: string
+          id: string
+          rol_nombre: string
+          tipo_rol: Database["public"]["Enums"]["tipo_rol_enum"]
+        }
+        Insert: {
+          activo?: boolean
+          actualizado_en?: string
+          creado_en?: string
+          id?: string
+          rol_nombre: string
+          tipo_rol?: Database["public"]["Enums"]["tipo_rol_enum"]
+        }
+        Update: {
+          activo?: boolean
+          actualizado_en?: string
+          creado_en?: string
+          id?: string
+          rol_nombre?: string
+          tipo_rol?: Database["public"]["Enums"]["tipo_rol_enum"]
+        }
+        Relationships: []
+      }
+      usuarios: {
+        Row: {
+          activo: boolean
+          actualizado_en: string
+          clientes_ids: string[]
+          creado_en: string
+          email: string | null
+          fecha_ultimo_acceso_bot: string | null
+          FechaUltimoAccesoBot: string | null
+          id: string
+          nombre_usuario: string
+          telefono: string | null
+        }
+        Insert: {
+          activo?: boolean
+          actualizado_en?: string
+          clientes_ids?: string[]
+          creado_en?: string
+          email?: string | null
+          fecha_ultimo_acceso_bot?: string | null
+          FechaUltimoAccesoBot?: string | null
+          id?: string
+          nombre_usuario: string
+          telefono?: string | null
+        }
+        Update: {
+          activo?: boolean
+          actualizado_en?: string
+          clientes_ids?: string[]
+          creado_en?: string
+          email?: string | null
+          fecha_ultimo_acceso_bot?: string | null
+          FechaUltimoAccesoBot?: string | null
+          id?: string
+          nombre_usuario?: string
+          telefono?: string | null
+        }
+        Relationships: []
+      }
+      usuarios_roles: {
+        Row: {
+          creado_en: string
+          id: string
+          rol_id: string
+          usuario_id: string
+        }
+        Insert: {
+          creado_en?: string
+          id?: string
+          rol_id: string
+          usuario_id: string
+        }
+        Update: {
+          creado_en?: string
+          id?: string
+          rol_id?: string
+          usuario_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "usuarios_roles_rol_id_fkey"
+            columns: ["rol_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "usuarios_roles_usuario_id_fkey"
+            columns: ["usuario_id"]
+            isOneToOne: false
+            referencedRelation: "usuarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      actualizar_ultimo_acceso_bot: {
+        Args: {
+          p_identificador: string
+          p_fecha?: string
+        }
+        Returns: Json
+      }
+      wms_actualizar_ultimo_acceso_bot: {
+        Args: {
+          p_identificador: string
+          p_fecha?: string
+        }
+        Returns: Json
+      }
+      obtener_usuario_por_telefono: {
+        Args: {
+          p_telefono: string
+        }
+        Returns: Json
+      }
+      wms_obtener_usuario_por_telefono: {
+        Args: {
+          p_telefono: string
+        }
+        Returns: Json
+      }
+      obtener_usuarios_por_cliente: {
+        Args: {
+          p_codigo_cliente: string
+        }
+        Returns: Json
+      }
+      wms_obtener_usuarios_por_cliente: {
+        Args: {
+          p_codigo_cliente: string
+        }
+        Returns: Json
+      }
+      obtener_cliente_por_telefono: {
+        Args: {
+          p_telefono: string
+        }
+        Returns: Json
+      }
+      obtener_stock_consolidado_por_cliente: {
+        Args: {
+          p_cliente_id: string
+        }
+        Returns: Json
+      }
+      wms_obtener_cliente_por_telefono: {
+        Args: {
+          p_telefono: string
+        }
+        Returns: Json
+      }
+      wms_obtener_stock_consolidado_por_cliente: {
+        Args: {
+          p_cliente_id: string
+        }
+        Returns: Json
+      }
       wms_agregar_item_manual_liquidacion: {
         Args: {
           p_cantidad: number
@@ -2068,6 +2232,13 @@ export type Database = {
         | "ajuste_negativo"
         | "transferencia"
         | "merma"
+      tipo_rol_enum:
+        | "admin"
+        | "operador"
+        | "supervisor"
+        | "cliente"
+        | "chofer"
+        | "bot"
     }
     CompositeTypes: {
       [_ in never]: never

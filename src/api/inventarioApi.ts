@@ -5,6 +5,115 @@ export type RegistroInventario = Database['public']['Tables']['inventario']['Row
 export type MovimientoInventario = Database['public']['Tables']['movimientos_inventario']['Row'];
 export type PalletLpn = Database['public']['Tables']['pallets_lpn']['Row'];
 
+export interface StockConsolidadoArticulo {
+  articulo_id?: string;
+  sku?: string;
+  nombre?: string;
+  descripcion?: string;
+  unidad_medida?: string;
+  disponible: number;
+  reservado: number;
+  total: number;
+  stockFisico: number;
+  stockFuturo: number;
+  volumenM3Total?: number;
+}
+
+export type ResumenStockConsolidado = Record<string, StockConsolidadoArticulo>;
+
+/**
+ * Obtiene el stock consolidado por artículo para un cliente depositante.
+ * Invoca prioritariamente el procedimiento RPC de Supabase 'wms_obtener_stock_consolidado_por_cliente'
+ * (que agrupa existencias eficientemente en la base de datos), con fallback automático a agregación local.
+ *
+ * @param clienteId UUID del cliente depositante, su código comercial o teléfono
+ * @returns Diccionario indexado por articulo_id con el detalle de stock disponible, reservado, físico y futuro
+ */
+export async function obtenerStockConsolidadoPorCliente(
+  clienteId: string
+): Promise<Record<string, StockConsolidadoArticulo>> {
+  if (!clienteId || !clienteId.trim()) {
+    return {};
+  }
+
+  const cleanId = clienteId.trim();
+
+  // 1. Invocar RPC nativo de Supabase
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      'wms_obtener_stock_consolidado_por_cliente',
+      { p_cliente_id: cleanId }
+    );
+
+    if (!rpcError && rpcData && typeof rpcData === 'object' && !Array.isArray(rpcData)) {
+      return rpcData as unknown as Record<string, StockConsolidadoArticulo>;
+    }
+  } catch (rpcErr) {
+    console.warn('Fallback a agregación local en obtenerStockConsolidadoPorCliente:', rpcErr);
+  }
+
+  // 2. Fallback de agregación directa sobre la tabla inventario
+  try {
+    let query = supabase
+      .from('inventario')
+      .select('articulo_id, cantidad_disponible, cantidad_reservada, volumen_m3, unidad_medida');
+
+    // Si cleanId parece UUID, filtrar directo
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId)) {
+      query = query.eq('cliente_id', cleanId);
+    } else {
+      // Buscar el cliente por código o teléfono para obtener su UUID
+      const { data: cli } = await supabase
+        .from('clientes')
+        .select('id')
+        .or(`codigo.eq.${cleanId},telefono.eq.${cleanId}`)
+        .maybeSingle();
+
+      if (cli?.id) {
+        query = query.eq('cliente_id', cli.id);
+      } else {
+        query = query.eq('cliente_id', cleanId);
+      }
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const resumen: Record<string, StockConsolidadoArticulo> = {};
+    (data || []).forEach((row: any) => {
+      const artId = row.articulo_id;
+      if (!resumen[artId]) {
+        resumen[artId] = {
+          articulo_id: artId,
+          disponible: 0,
+          reservado: 0,
+          total: 0,
+          stockFisico: 0,
+          stockFuturo: 0,
+          volumenM3Total: 0,
+          unidad_medida: row.unidad_medida,
+        };
+      }
+      const disp = Number(row.cantidad_disponible || 0);
+      const res = Number(row.cantidad_reservada || 0);
+      const vol = Number(row.volumen_m3 || 0);
+      resumen[artId].disponible += disp;
+      resumen[artId].reservado += res;
+      resumen[artId].total += disp + res;
+      resumen[artId].stockFisico += disp + res;
+      resumen[artId].stockFuturo += disp;
+      if (resumen[artId].volumenM3Total !== undefined) {
+        resumen[artId].volumenM3Total = Math.round(((resumen[artId].volumenM3Total || 0) + vol) * 10000) / 10000;
+      }
+    });
+
+    return resumen;
+  } catch (err) {
+    console.error('Error al obtener stock consolidado por cliente:', err);
+    throw err;
+  }
+}
+
 export const inventarioApi = {
   // --- Stock por Cliente (con cubicaje M3) ---
   async consultarStock(filtros?: {
@@ -103,32 +212,5 @@ export const inventarioApi = {
   },
 
   // --- Stock Consolidado por Artículo para un Cliente (Validación en Pedidos y Outbound) ---
-  // Stock Físico = total (disponible + reservado)
-  // Stock Futuro = entradas - salidas - reservados = stock Físico - reservado = disponible
-  async obtenerStockConsolidadoPorCliente(clienteId: string): Promise<Record<string, { disponible: number; reservado: number; total: number; stockFisico: number; stockFuturo: number }>> {
-    const { data, error } = await supabase
-      .from('inventario')
-      .select('articulo_id, cantidad_disponible, cantidad_reservada')
-      .eq('cliente_id', clienteId);
-
-    if (error) throw error;
-
-    const resumen: Record<string, { disponible: number; reservado: number; total: number; stockFisico: number; stockFuturo: number }> = {};
-    (data || []).forEach((row: any) => {
-      const artId = row.articulo_id;
-      if (!resumen[artId]) {
-        resumen[artId] = { disponible: 0, reservado: 0, total: 0, stockFisico: 0, stockFuturo: 0 };
-      }
-      const disp = Number(row.cantidad_disponible || 0);
-      const res = Number(row.cantidad_reservada || 0);
-      resumen[artId].disponible += disp;
-      resumen[artId].reservado += res;
-      resumen[artId].total += disp + res;
-      resumen[artId].stockFisico += disp + res;
-      // Stock Futuro = Stock Físico - Reservados = disp
-      resumen[artId].stockFuturo += disp;
-    });
-
-    return resumen;
-  }
+  obtenerStockConsolidadoPorCliente,
 };

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Building2, Save, AlertCircle } from 'lucide-react';
+import { X, Building2, Save, AlertCircle, Users, Shield } from 'lucide-react';
 import type { Cliente, ClienteInsert, ClienteUpdate } from '../../api/clientesApi';
 import { clientesApi } from '../../api/clientesApi';
+import type { Usuario } from '../../api/usuariosApi';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 
 interface ClienteModalProps {
@@ -30,6 +31,10 @@ export const ClienteModal: React.FC<ClienteModalProps> = ({
   const [emailContacto, setEmailContacto] = useState('');
   const [activo, setActivo] = useState(true);
 
+  // Usuarios vinculados
+  const [usuariosRelacionados, setUsuariosRelacionados] = useState<Usuario[]>([]);
+  const [cargandoUsuarios, setCargandoUsuarios] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -44,6 +49,18 @@ export const ClienteModal: React.FC<ClienteModalProps> = ({
         setTelefono(cliente.telefono || '');
         setEmailContacto(cliente.email_contacto || '');
         setActivo(cliente.activo ?? true);
+
+        // Cargar usuarios relacionados
+        if (cliente.codigo) {
+          setCargandoUsuarios(true);
+          clientesApi
+            .obtenerUsuariosRelacionados(cliente.codigo)
+            .then((users) => setUsuariosRelacionados(users))
+            .catch((err) => console.warn('Error cargando usuarios del cliente:', err))
+            .finally(() => setCargandoUsuarios(false));
+        } else {
+          setUsuariosRelacionados([]);
+        }
       } else {
         setCodigo('');
         setRazonSocial('');
@@ -53,6 +70,7 @@ export const ClienteModal: React.FC<ClienteModalProps> = ({
         setTelefono('');
         setEmailContacto('');
         setActivo(true);
+        setUsuariosRelacionados([]);
       }
       setErrorMsg(null);
     }
@@ -264,6 +282,75 @@ export const ClienteModal: React.FC<ClienteModalProps> = ({
               className="w-full px-3 py-2 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
             />
           </div>
+
+          {/* Usuarios con Acceso Vinculado a este Cliente */}
+          {isEditing && (
+            <div className="p-3 rounded bg-slate-50 dark:bg-[#191818] border border-slate-200 dark:border-[#333333] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] uppercase flex items-center gap-1.5">
+                  <Users className="w-3.5 h-3.5 text-violet-500 dark:text-[#dab9ff]" />
+                  <span>Usuarios Vinculados al Cliente</span>
+                </span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 dark:bg-[#201330] dark:text-[#dab9ff]">
+                  {cargandoUsuarios ? '...' : usuariosRelacionados.length}
+                </span>
+              </div>
+
+              {cargandoUsuarios ? (
+                <div className="text-[11px] text-slate-400 italic">Cargando usuarios con acceso...</div>
+              ) : usuariosRelacionados.length === 0 ? (
+                <div className="text-[11px] text-slate-400 dark:text-[#978d9d] italic">
+                  No hay usuarios vinculados a este código ({codigo}) ni con acceso global ('000').
+                </div>
+              ) : (
+                <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1">
+                  {usuariosRelacionados.map((u) => {
+                    const esGlobal = (u.clientes_ids || []).includes('000');
+                    return (
+                      <div
+                        key={u.id}
+                        className="flex items-center justify-between p-1.5 rounded bg-white dark:bg-[#201f1f] border border-slate-200 dark:border-[#2a2a2a] text-[11px]"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-slate-800 dark:text-[#e5e2e1]">
+                            {u.nombre_usuario}
+                          </span>
+                          {u.roles && u.roles.length > 0 && (
+                            <span className="flex items-center gap-1">
+                              {u.roles.map((r) => (
+                                <span
+                                  key={r.id}
+                                  className="text-[9px] px-1 py-0.2 rounded bg-slate-100 dark:bg-[#2e2d2d] text-slate-600 dark:text-[#cdc3d4]"
+                                >
+                                  {r.rol_nombre}
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px]">
+                          {u.telefono && (
+                            <span className="text-slate-500 dark:text-[#978d9d] font-mono">
+                              {u.telefono}
+                            </span>
+                          )}
+                          <span
+                            className={`px-1.5 py-0.2 rounded font-mono text-[9px] uppercase ${
+                              esGlobal
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-[#342410] dark:text-[#ffd27a] dark:border-[#4d3618]'
+                                : 'bg-violet-50 text-violet-700 border border-violet-200 dark:bg-[#201330] dark:text-[#dab9ff] dark:border-[#522b7c]'
+                            }`}
+                          >
+                            {esGlobal ? 'Todos (000)' : u.clientes_ids?.join(', ')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Toggle Activo */}
           <div className="pt-2 flex items-center justify-between border-t border-slate-200 dark:border-[#333333]">

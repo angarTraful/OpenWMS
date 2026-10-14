@@ -17,11 +17,17 @@ import {
   Filter,
   FilterX,
   Upload,
+  Users,
+  Shield,
+  X,
+  Bot,
 } from 'lucide-react';
 import type { Cliente } from '../../api/clientesApi';
 import { clientesApi } from '../../api/clientesApi';
+import type { Usuario } from '../../api/usuariosApi';
 import { ClienteModal } from './ClienteModal';
 import { ImportarMaestrosModal } from './ImportarMaestrosModal';
+import { ModalPortal } from '@/components/ui/ModalPortal';
 import {
   SortableHeaderCell,
   ColumnFilterInput,
@@ -61,8 +67,27 @@ export const ClientesAbm: React.FC<ClientesAbmProps> = ({ onRefreshParent }) => 
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null);
 
+  // Modal Usuarios Vinculados
+  const [clienteVerUsuarios, setClienteVerUsuarios] = useState<Cliente | null>(null);
+  const [usuariosRelacionadosModal, setUsuariosRelacionadosModal] = useState<Usuario[]>([]);
+  const [cargandoUsuariosModal, setCargandoUsuariosModal] = useState(false);
+
   // Feedback notification
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
+
+  const handleVerUsuarios = async (cli: Cliente) => {
+    setClienteVerUsuarios(cli);
+    setCargandoUsuariosModal(true);
+    try {
+      const list = await clientesApi.obtenerUsuariosRelacionados(cli.codigo);
+      setUsuariosRelacionadosModal(list || []);
+    } catch (err) {
+      console.error('Error al cargar usuarios vinculados:', err);
+      setUsuariosRelacionadosModal([]);
+    } finally {
+      setCargandoUsuariosModal(false);
+    }
+  };
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -590,6 +615,14 @@ export const ClientesAbm: React.FC<ClientesAbmProps> = ({ onRefreshParent }) => 
                     <td className="py-1.5 px-2.5 text-center">
                       <div className="flex items-center justify-center gap-1">
                         <button
+                          onClick={() => handleVerUsuarios(cli)}
+                          title="Ver usuarios con acceso a este cliente"
+                          className="p-1 rounded text-[#cdc3d4] hover:text-[#75d1ff] hover:bg-[#2a2a2a] transition-colors"
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
                           onClick={() => handleEditar(cli)}
                           title="Modificar datos del cliente"
                           className="p-1 rounded text-[#cdc3d4] hover:text-[#dab9ff] hover:bg-[#2a2a2a] transition-colors"
@@ -671,6 +704,161 @@ export const ClientesAbm: React.FC<ClientesAbmProps> = ({ onRefreshParent }) => 
           });
         }}
       />
+
+      {/* Modal Ver Usuarios Vinculados al Cliente */}
+      {clienteVerUsuarios && (
+        <ModalPortal
+          onClose={() => setClienteVerUsuarios(null)}
+          isDirty={false}
+        >
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-[#131313]/80 backdrop-blur-sm animate-fadeIn">
+            <div className="relative w-full max-w-2xl rounded-md bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] shadow-2xl overflow-hidden text-slate-800 dark:text-[#e5e2e1] flex flex-col max-h-[85vh]">
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-[#333333] bg-slate-50 dark:bg-[#201f1f]">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 rounded bg-sky-100 dark:bg-[#102436] border border-sky-200 dark:border-[#1e4976] text-sky-700 dark:text-[#75d1ff]">
+                    <Users className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold tracking-tight text-slate-900 dark:text-[#e5e2e1] flex items-center gap-2">
+                      <span>Usuarios con Acceso Vinculado</span>
+                      <span className="font-mono text-xs px-2 py-0.5 rounded bg-violet-100 text-violet-700 dark:bg-[#201330] dark:text-[#dab9ff]">
+                        {clienteVerUsuarios.codigo}
+                      </span>
+                    </h2>
+                    <p className="text-[11px] text-slate-500 dark:text-[#cdc3d4]">
+                      {clienteVerUsuarios.razon_social} — Operadores, supervisores y clientes con permisos sobre este depositante
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setClienteVerUsuarios(null)}
+                  className="p-1.5 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200 dark:text-[#cdc3d4] dark:hover:text-[#e5e2e1] dark:hover:bg-[#2a2a2a] transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 overflow-y-auto space-y-3">
+                {cargandoUsuariosModal ? (
+                  <div className="py-8 flex flex-col items-center justify-center text-slate-500 dark:text-[#cdc3d4] text-xs gap-2">
+                    <RefreshCw className="w-5 h-5 animate-spin text-sky-500" />
+                    <span>Consultando usuarios vinculados...</span>
+                  </div>
+                ) : usuariosRelacionadosModal.length === 0 ? (
+                  <div className="py-8 text-center text-slate-500 dark:text-[#cdc3d4] text-xs">
+                    No se encontraron usuarios asignados al código {clienteVerUsuarios.codigo} ni usuarios con acceso total ('000').
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {usuariosRelacionadosModal.map((u) => {
+                      const esGlobal = (u.clientes_ids || []).includes('000');
+                      const ultimoAcceso = u.fecha_ultimo_acceso_bot || (u as any).FechaUltimoAccesoBot;
+
+                      return (
+                        <div
+                          key={u.id}
+                          className="p-3 rounded bg-slate-50 dark:bg-[#161515] border border-slate-200 dark:border-[#2a2a2a] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-slate-900 dark:text-[#e5e2e1]">
+                                {u.nombre_usuario}
+                              </span>
+                              <span
+                                className={`px-1.5 py-0.2 rounded text-[10px] font-mono uppercase font-semibold ${
+                                  u.activo
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-[#153426] dark:text-[#69f0ae] dark:border-[#1b4332]'
+                                    : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-[#381015] dark:text-[#ffb4ab] dark:border-[#690005]'
+                                }`}
+                              >
+                                {u.activo ? 'Activo' : 'Inactivo'}
+                              </span>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600 dark:text-[#cdc3d4]">
+                              {u.email && (
+                                <div className="flex items-center gap-1">
+                                  <Mail className="w-3 h-3 text-sky-500" />
+                                  <span>{u.email}</span>
+                                </div>
+                              )}
+                              {u.telefono && (
+                                <div className="flex items-center gap-1 font-mono">
+                                  <Phone className="w-3 h-3 text-slate-400" />
+                                  <span>{u.telefono}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Roles */}
+                            {u.roles && u.roles.length > 0 && (
+                              <div className="flex flex-wrap gap-1 pt-1">
+                                {u.roles.map((r) => (
+                                  <span
+                                    key={r.id}
+                                    className="text-[9px] px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 dark:bg-[#201330] dark:text-[#dab9ff] dark:border-[#522b7c] font-semibold"
+                                  >
+                                    {r.rol_nombre} ({r.tipo_rol})
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex flex-col sm:items-end gap-1.5 shrink-0 text-right">
+                            <span
+                              className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
+                                esGlobal
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-[#342410] dark:text-[#ffd27a] dark:border-[#4d3618]'
+                                  : 'bg-sky-50 text-sky-700 border border-sky-200 dark:bg-[#102436] dark:text-[#75d1ff] dark:border-[#1e4976]'
+                              }`}
+                            >
+                              {esGlobal ? 'Acceso Todos (000)' : `Directo: ${clienteVerUsuarios.codigo}`}
+                            </span>
+
+                            {ultimoAcceso ? (
+                              <div
+                                className="flex items-center gap-1 text-[10px] text-violet-600 dark:text-[#dab9ff] font-mono"
+                                title={`Último acceso bot: ${new Date(ultimoAcceso).toLocaleString('es-AR')}`}
+                              >
+                                <Bot className="w-3 h-3" />
+                                <span>
+                                  Bot: {new Date(ultimoAcceso).toLocaleDateString('es-AR', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 dark:text-[#978d9d] italic">
+                                Sin accesos bot
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-3 border-t border-slate-200 dark:border-[#333333] bg-slate-50 dark:bg-[#201f1f] flex justify-end">
+                <button
+                  onClick={() => setClienteVerUsuarios(null)}
+                  className="px-4 py-1.5 text-xs font-semibold rounded border border-slate-300 dark:border-[#333333] bg-white hover:bg-slate-100 dark:bg-[#1c1b1b] dark:hover:bg-[#2a2a2a] text-slate-700 dark:text-[#cdc3d4] transition-colors"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
     </div>
   );
 };

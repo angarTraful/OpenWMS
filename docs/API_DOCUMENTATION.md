@@ -22,6 +22,66 @@ Authorization: Bearer <TOKEN_DE_SESION_DEL_USUARIO_O_ANON_KEY>
 Content-Type: application/json
 ```
 
+### Ejemplo de Consulta RPC por Teléfono vía HTTP (cURL / Postman)
+
+**Método POST:**
+```bash
+curl -X POST "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/wms_obtener_cliente_por_telefono" \
+  -H "apikey: <TU_SUPABASE_ANON_KEY>" \
+  -H "Authorization: Bearer <TU_SUPABASE_ANON_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"p_telefono": "+54 11 4789-1000"}'
+```
+
+**Método GET (Función STABLE):**
+```bash
+curl -X GET "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/wms_obtener_cliente_por_telefono?p_telefono=%2B54%2011%204789-1000" \
+  -H "apikey: <TU_SUPABASE_ANON_KEY>" \
+  -H "Authorization: Bearer <TU_SUPABASE_ANON_KEY>"
+```
+
+### Ejemplo de Consulta RPC de Stock Consolidado por Cliente (cURL / Postman)
+
+**Método POST:**
+```bash
+curl -X POST "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/obtener_stock_consolidado_por_cliente" \
+  -H "apikey: <TU_SUPABASE_ANON_KEY>" \
+  -H "Authorization: Bearer <TU_SUPABASE_ANON_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"p_cliente_id": "c0000000-0000-0000-0000-000000000001"}'
+```
+
+**Método GET (soporta UUID, código comercial o teléfono del cliente):**
+```bash
+curl -X GET "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/obtener_stock_consolidado_por_cliente?p_cliente_id=1157617815" \
+  -H "apikey: <TU_SUPABASE_ANON_KEY>" \
+  -H "Authorization: Bearer <TU_SUPABASE_ANON_KEY>"
+```
+
+### Ejemplo de Actualización de FechaUltimoAccesoBot en Usuarios (cURL / Postman / Bot)
+
+El registro de accesos del bot se almacena en la tabla **`usuarios`** en la columna **`fecha_ultimo_acceso_bot`** (y alias `FechaUltimoAccesoBot`). La RPC busca al usuario de forma flexible por UUID, teléfono exacto o normalizado, email o nombre de usuario:
+
+**Método POST (identifica por Teléfono, UUID, Email o Nombre de Usuario y asigna now() por defecto):**
+```bash
+curl -X POST "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/actualizar_ultimo_acceso_bot" \
+  -H "apikey: <TU_SUPABASE_ANON_KEY>" \
+  -H "Authorization: Bearer <TU_SUPABASE_ANON_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"p_identificador": "+54 9 11 1234-5678"}'
+```
+
+### Ejemplo de Consulta RPC de Usuario por Teléfono (cURL / Postman)
+
+**Método POST:**
+```bash
+curl -X POST "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/wms_obtener_usuario_por_telefono" \
+  -H "apikey: <TU_SUPABASE_ANON_KEY>" \
+  -H "Authorization: Bearer <TU_SUPABASE_ANON_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"p_telefono": "+54 9 11 1234-5678"}'
+```
+
 ---
 
 ## 2. Servicios del SDK TypeScript (`src/api/`)
@@ -31,6 +91,7 @@ En la carpeta [src/api/](file:///c:/Users/intra/Documents/SISTEMAS/WMS_SSD/src/a
 ```typescript
 import { 
   clientesApi, 
+  usuariosApi,
   articulosApi, 
   almacenApi, 
   recepcionesApi, 
@@ -41,7 +102,11 @@ import {
 ```
 
 ### A. Clientes y Destinatarios (`clientesApi`)
-* `listarClientes()`: Devuelve los clientes depositantes 3PL activos.
+* `listarClientes(soloActivos?)`: Devuelve los clientes depositantes 3PL.
+* `obtenerClientePorId(id)`: Devuelve el cliente por su ID UUID.
+* `obtenerClientePorTelefono(telefono, soloActivos?)`: Devuelve el objeto cliente en formato JSON dado su número de teléfono.
+* `obtenerUsuariosRelacionados(codigoCliente)`: **Devuelve los usuarios vinculados al cliente**, incluyendo usuarios asignados explícitamente a su código o usuarios con permiso global `'000'` (Todos).
+* `actualizarUltimoAccesoBot(identificador, fecha?)`: Delega la actualización a `usuariosApi.actualizarUltimoAccesoBot`.
 * `crearCliente({ codigo, razon_social, unidad_negocio, ... })`: Registra un nuevo cliente depositante.
 * `listarDestinatariosPorCliente(clienteId)`: Devuelve las sucursales o destinatarios autorizados para el cliente.
 
@@ -62,22 +127,56 @@ import {
 ### D. Inventario y Cubicaje M3 (`inventarioApi`)
 * `consultarStock({ clienteId, articuloId, ubicacionId, ... })`: Consulta existencias filtradas con datos del lote, pallet LPN y M3 ocupados.
 * `obtenerM3OcupadosPorCliente(clienteId)`: **Cálculo directo del total de M3 ocupados por el cliente para la facturación 3PL del espacio**.
+* `obtenerStockConsolidadoPorCliente(clienteId)`: **Stock consolidado por artículo en JSON** (`disponible`, `reservado`, `total`/`stockFisico`, `stockFuturo`, `volumenM3Total`). Invoca la función RPC de Supabase `wms_obtener_stock_consolidado_por_cliente` / `obtener_stock_consolidado_por_cliente` (admite UUID, código o teléfono del cliente).
 * `obtenerPalletPorCodigo(codigoLpn)`: Consulta todo el contenido de un pallet específico (bultos, artículos, M3 y ubicación actual).
 * `consultarKardex(clienteId, articuloId)`: Trazabilidad inmutable de movimientos físicos.
 
 ### E. Pedidos y Picking (`pedidosApi`)
 * `crearPedido(pedido, detalles)`: Registra pedido para un destinatario del cliente.
-* `confirmarPicking({ tareaPickingId, cantidadRecolectada })`: **Ejecuta la transacción atómica de picking**:
-  * Bloquea la fila de inventario (`FOR UPDATE`).
-  * Valida stock disponible.
-  * Descuenta el stock y los M3 de la ubicación y pallet.
-  * Actualiza el pedido a 'separado'.
-  * Registra la salida en el Kardex.
+### E. Pedidos y Preparación Outbound (`pedidosApi`)
+* `crearPedido(pedido, detalles)`: Registra el pedido con cliente, destinatario, prioridad y renglones solicitados.
+* `asignarPickingFEFO(pedidoId)`: **Ejecuta la alocación inteligente FEFO/FIFO**:
+  * Prioriza fechas de vencimiento más próximas (FEFO) para artículos perecederos.
+  * Prioriza antigüedad de ingreso (FIFO) y pallets completos antes que fraccionados.
+  * Reserva existencias atómicamente y crea las `tareas_picking` dirigidas por ubicación.
+* `confirmarPicking({ tareaPickingId, cantidadRecolectada, novedad? })`: **Ejecuta la recolección física ACID**:
+  * Descuenta el stock reservado y los $M^3$ de la ubicación y pallet de origen.
+  * Si hubo faltante físico, libera el remanente reservado a disponible y registra la novedad de discrepancia.
+  * Registra el asiento inmutable de egreso en el Kardex (`movimientos_inventario`).
+* `consolidarPalletDespacho({ pedidoId, palletSalidaLpn, totalBultos, pesoEstimadoKg, volumenEstimadoM3 })`: Mesa de control y consolidación sobre el pallet de despacho (`paletizado_despacho`).
+* `emitirRemitoRx({ pedidoId, numeroRemitoRx, cae? })`: Emite el Remito Rx fiscal calculando automáticamente bultos, pallets, kilos, $M^3$ y valor declarado total.
+* `obtenerRemitoPorPedido(pedidoId)`: Consulta extendida con datos fiscales y renglones para la plantilla de impresión.
 
 ### F. Salidas, Despachos y Ruteo (`despachosApi`)
-* `crearOrdenSalida(almacenId, numeroOrden, pedidosIds)`: Agrupa múltiples pedidos en una orden de salida consolidada.
-* `emitirRemitoRx({ orden_salida_id, pedido_id, numero_remito_rx, total_bultos, total_pallets, peso_total_kg, volumen_total_m3, valor_declarado_total, ... })`: Genera el remito oficial de tránsito.
-* `asignarRuta(ruta, paradas)`: Asigna unidad de transporte, chofer, patente e itinerario con secuencia de paradas de entrega.
+* `crearOrdenSalida(almacenId, numeroOrden, pedidosIds)`: Agrupa múltiples pedidos preparados en una orden de salida consolidada.
+* `asignarRuta(ruta, paradas)`: Asigna transportista, vehículo (patente), conductor e itinerario con secuencia de paradas ordenada.
+* `listarRemitos(clienteId?)`: Listado maestro de Remitos Rx emitidos para control fiscal y de tráfico.
+* `listarRutasConParadas(almacenId?)`: Visualización del estado de transporte y seguimiento de paradas de cada hoja de ruta.
+* `obtenerRutaPorId(rutaId)`: Detalle completo de la ruta con pedidos, destinatarios, direcciones e itinerario secuenciado.
+* `actualizarEstadoRuta(rutaId, estado, fechaSalidaReal?)`: Transición de estado (`programada` -> `en_viaje` -> `itinerario_cumplido`).
+* `registrarEntregaParada(...)`: Registra entrega conforme (receptor, DNI, firma digital, foto POD) o novedad (faltantes de bultos) y finaliza atómicamente la parada.
+* `adjuntarDocumentoParada(...)`: Permite adjuntar o actualizar fotos de remitos conformados en paradas ya entregadas sin alterar datos de recepción.
+
+### G. Almacenamiento en Google Drive (`googleDriveService`)
+* `subirDocumentoAGoogleDrive({ file, base64, fileName, folder })`: Sube fotos y documentos pesados a la carpeta exclusiva **`OpenWMS_Documentos`** en Google Drive, evitando sobrecargar la base de datos PostgreSQL con datos base64.
+* En la base de datos (`rutas_paradas_itinerario.foto_remito_url`), se guarda **únicamente el enlace (URL público)** al archivo en Google Drive.
+* `normalizarUrlGoogleDrive(url)`: Genera URLs de visualización rápida y de alta resolución optimizadas para el navegador sin problemas de CORS.
+* `probarConexionGoogleDrive()`: Valida la conectividad con el Webhook de Google Apps Script.
+
+### H. Usuarios, Roles y Permisos 3PL (`usuariosApi`)
+* `listarUsuarios(soloActivos?)`: Consulta todos los usuarios del sistema junto a su lista de roles asociados (`usuarios_roles` -> `roles`).
+* `obtenerUsuarioPorId(id)`: Retorna el usuario por su ID UUID.
+* `obtenerUsuarioPorTelefono(telefono, soloActivos?)`: Búsqueda flexible por teléfono mediante RPC `wms_obtener_usuario_por_telefono` o PostgREST (soporta formatos internacionales, con o sin signos y espacios).
+* `actualizarUltimoAccesoBot(identificador, fecha?)`: **Actualiza la fecha de último acceso del bot (`fecha_ultimo_acceso_bot`)**. Resuelve al usuario por UUID, teléfono exacto o normalizado, email o nombre de usuario. Si no se provee fecha, toma `now()`.
+* `listarUsuariosPorClienteCodigo(clienteCodigo)`: Devuelve los usuarios con acceso al código del cliente. Incluye automáticamente a aquellos con `'000'` (acceso global a todos los clientes).
+* `crearUsuario(usuario, rolesIds?)`: Crea una cuenta de usuario asignándole su array de `clientes_ids` (por defecto `['000']`) y vincula los roles seleccionados.
+* `actualizarUsuario(id, cambios, rolesIds?)`: Modifica datos del usuario y sincroniza la tabla intermedia `usuarios_roles`.
+* `eliminarUsuario(id)`: Elimina el registro o realiza baja lógica (`activo: false`) si existen restricciones referenciales.
+* `alternarEstadoUsuario(id, activoActual)`: Alterna el estado activo/inactivo del usuario.
+* `listarRoles(soloActivos?)`: Catálogo de roles (`admin`, `operador`, `supervisor`, `cliente`, `chofer`, `bot`).
+* `crearRol(rol)`, `actualizarRol(id, cambios)`, `eliminarRol(id)`: Mantenimiento de roles del sistema.
+
+> **Convención '000':** El array `clientes_ids` en `usuarios` almacena los códigos de los clientes a los que tiene acceso el usuario. El valor `'000'` indica acceso irrestricto a **Todos los Clientes**, permitiendo que consultas de stock y pedidos abarquen el inventario global sin requerir asignar cada código individualmente.
 
 ---
 

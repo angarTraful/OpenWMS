@@ -1,5 +1,10 @@
 import { supabase } from './supabaseClient';
 import type { Database } from '../../types/database.types';
+import {
+  actualizarUltimoAccesoBot as actualizarUltimoAccesoBotUsuario,
+  listarUsuariosPorClienteCodigo,
+  type Usuario,
+} from './usuariosApi';
 
 export type Cliente = Database['public']['Tables']['clientes']['Row'];
 export type ClienteInsert = Database['public']['Tables']['clientes']['Insert'];
@@ -173,15 +178,127 @@ export function buscarDestinatarioPorDireccion(
   });
 }
 
+/**
+ * Normaliza un número de teléfono extrayendo únicamente los dígitos numéricos
+ * para comparaciones seguras y tolerantes a formatos (ej: "+54 11 4789-1000" -> "541147891000")
+ */
+export function normalizarTelefono(telefono: string): string {
+  if (!telefono) return '';
+  return telefono.replace(/\D/g, '');
+}
+
+/**
+ * Obtiene el objeto cliente en formato JSON a partir del número de teléfono.
+ * Realiza la búsqueda a través de la API de Supabase, invocando prioritariamente
+ * el procedimiento RPC 'wms_obtener_cliente_por_telefono' y con fallback a consulta
+ * directa sobre la tabla 'clientes' (con búsqueda exacta y por dígitos normalizados).
+ *
+ * @param telefono Número de teléfono del cliente a consultar
+ * @param soloActivos Opcional. Si es true, filtra solo clientes activos (por defecto false)
+ * @returns Promesa con el objeto Cliente en formato JSON o null si no se encuentra
+ */
+export async function obtenerClientePorTelefono(
+  telefono: string,
+  soloActivos = false
+): Promise<Cliente | null> {
+  if (!telefono || typeof telefono !== 'string' || !telefono.trim()) {
+    return null;
+  }
+
+  const cleanTel = telefono.trim();
+
+  // 1. Invocar RPC nativo de Supabase si está disponible
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      'wms_obtener_cliente_por_telefono',
+      { p_telefono: cleanTel }
+    );
+
+    if (!rpcError && rpcData) {
+      const cliente = rpcData as unknown as Cliente;
+      if (soloActivos && !cliente.activo) {
+        return null;
+      }
+      return cliente;
+    }
+  } catch (rpcErr) {
+    console.warn('Fallback a consulta directa en obtenerClientePorTelefono:', rpcErr);
+  }
+
+  // 2. Fallback de consulta directa a la API de Supabase (PostgREST)
+  try {
+    // 2.a Coincidencia exacta de texto
+    let query = supabase.from('clientes').select('*').eq('telefono', cleanTel);
+    if (soloActivos) query = query.eq('activo', true);
+    const { data, error } = await query.maybeSingle();
+
+    if (!error && data) {
+      return data;
+    }
+
+    // 2.b Búsqueda flexible por dígitos normalizados
+    const digitsOnly = normalizarTelefono(cleanTel);
+    if (digitsOnly.length >= 6) {
+      let listQuery = supabase.from('clientes').select('*');
+      if (soloActivos) listQuery = listQuery.eq('activo', true);
+      const { data: lista, error: listError } = await listQuery;
+
+      if (!listError && lista && lista.length > 0) {
+        const encontrado = lista.find((c) => {
+          if (!c.telefono) return false;
+          const cDigits = normalizarTelefono(c.telefono);
+          return (
+            cDigits === digitsOnly ||
+            cDigits.endsWith(digitsOnly) ||
+            digitsOnly.endsWith(cDigits) ||
+            cDigits.includes(digitsOnly) ||
+            digitsOnly.includes(cDigits)
+          );
+        });
+
+        if (encontrado) return encontrado;
+      }
+    }
+  } catch (err) {
+    console.error('Error al obtener cliente por teléfono:', err);
+    throw err;
+  }
+
+  return null;
+}
+
+/**
+ * Actualiza la columna FechaUltimoAccesoBot delegando a Usuarios.
+ * En la nueva arquitectura, el registro de accesos del bot se asocia a la tabla de usuarios
+ * mediante su teléfono, UUID, email o nombre de usuario.
+ *
+ * @param identificador UUID, código, teléfono, email o nombre de usuario
+ * @param fecha Opcional. Timestamp o Date (por defecto fecha y hora actual)
+ * @returns Promesa con el usuario actualizado o null si no se encontró
+ */
+export async function actualizarUltimoAccesoBot(
+  identificador: string,
+  fecha?: string | Date
+): Promise<any> {
+  return actualizarUltimoAccesoBotUsuario(identificador, fecha);
+}
+
 export const clientesApi = {
   // Exponer utilidades para uso directo
   normalizarDireccion,
   normalizarTexto,
+  normalizarTelefono,
   obtenerBaseRazonSocial,
   generarSiguienteCodigoSucursal,
   buscarDestinatarioPorDireccion,
 
+  // --- Usuarios Relacionados con el Cliente ---
+  obtenerUsuariosRelacionados: (codigoCliente: string): Promise<Usuario[]> => {
+    return listarUsuariosPorClienteCodigo(codigoCliente);
+  },
+
   // --- Clientes Depositantes ---
+  actualizarUltimoAccesoBot,
   async listarClientes(soloActivos = true) {
     let query = supabase.from('clientes').select('*').order('razon_social', { ascending: true });
     if (soloActivos) query = query.eq('activo', true);
@@ -195,6 +312,8 @@ export const clientesApi = {
     if (error) throw error;
     return data;
   },
+
+  obtenerClientePorTelefono,
 
   async crearCliente(cliente: ClienteInsert) {
     const { data, error } = await supabase.from('clientes').insert(cliente).select().single();
