@@ -251,7 +251,7 @@ export const articulosApi = {
     return data || [];
   },
 
-  async crearSubcategoria(subcategoria: Partial<SubcategoriaInsert> & { codigo: string; nombre: string }): Promise<Subcategoria> {
+  async crearSubcategoria(subcategoria: SubcategoriaInsert): Promise<Subcategoria> {
     const { data, error } = await supabase
       .from('subcategorias_articulos')
       .insert({

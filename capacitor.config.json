@@ -1,0 +1,9 @@
+{
+  "appId": "com.wms.ssd",
+  "appName": "WMS SSD",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  }
+}

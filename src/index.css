@@ -373,6 +373,23 @@ html:not(.dark) {
     display: none !important;
   }
 
+  /* Hide any portal or element in body that does NOT contain the active printable container or sheet */
+  body:has([data-print-container="true"]) > *:not(:has([data-print-container="true"])):not([data-print-container="true"]),
+  body:has([data-print-sheet="true"]) > *:not(:has([data-print-sheet="true"])):not([data-print-sheet="true"]),
+  body.printing-modal > *:not(:has([data-print-container="true"])):not([data-print-container="true"]) {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Ensure background modal backdrops and non-printable overlays are completely hidden */
+  body:has([data-print-container="true"]) .fixed:not([data-print-container="true"]):not(:has([data-print-container="true"])),
+  body:has([data-print-sheet="true"]) .fixed:not([data-print-container="true"]):not(:has([data-print-sheet="true"])),
+  body.printing-modal .fixed:not([data-print-container="true"]):not(:has([data-print-container="true"])),
+  .fixed.inset-0:not([data-print-container="true"]):not(:has([data-print-container="true"])):not(:has([data-print-sheet="true"])) {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
   /* Universal container reset for printable modals */
   [data-print-container="true"] {
     position: static !important;

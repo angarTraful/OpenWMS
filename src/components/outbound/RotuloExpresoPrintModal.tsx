@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Printer,
@@ -32,8 +32,6 @@ export const RotuloExpresoPrintModal: React.FC<RotuloExpresoPrintModalProps> = (
 }) => {
   const [copias, setCopias] = useState<number>(totalBultos);
 
-  if (!isOpen || !pedido) return null;
-
   const handlePrint = () => {
     document.body.classList.add('printing-modal');
     window.print();
@@ -49,6 +47,8 @@ export const RotuloExpresoPrintModal: React.FC<RotuloExpresoPrintModalProps> = (
       document.body.classList.remove('printing-modal');
     };
   }, []);
+
+  if (!isOpen || !pedido) return null;
 
   const destinatario = pedido.destinatario || {};
   const cliente = pedido.cliente || {};

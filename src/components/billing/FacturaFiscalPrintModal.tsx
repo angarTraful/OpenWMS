@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   X,
   Printer,
@@ -25,6 +25,22 @@ export const FacturaFiscalPrintModal: React.FC<FacturaFiscalPrintModalProps> = (
   onClose,
   liquidacion,
 }) => {
+  const handlePrint = () => {
+    document.body.classList.add('printing-modal');
+    window.print();
+  };
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      document.body.classList.remove('printing-modal');
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      document.body.classList.remove('printing-modal');
+    };
+  }, []);
+
   if (!isOpen || !liquidacion) return null;
 
   const cliente = liquidacion.cliente;
@@ -73,21 +89,6 @@ export const FacturaFiscalPrintModal: React.FC<FacturaFiscalPrintModalProps> = (
   });
   const qrUrlAfip = `https://www.afip.gob.ar/fe/qr/?p=${btoa(qrJson)}`;
 
-  const handlePrint = () => {
-    document.body.classList.add('printing-modal');
-    window.print();
-  };
-
-  useEffect(() => {
-    const handleAfterPrint = () => {
-      document.body.classList.remove('printing-modal');
-    };
-    window.addEventListener('afterprint', handleAfterPrint);
-    return () => {
-      window.removeEventListener('afterprint', handleAfterPrint);
-      document.body.classList.remove('printing-modal');
-    };
-  }, []);
 
   return (
     <ModalPortal>

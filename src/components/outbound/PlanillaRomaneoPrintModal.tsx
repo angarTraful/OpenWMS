@@ -48,8 +48,6 @@ export const PlanillaRomaneoPrintModal: React.FC<PlanillaRomaneoPrintModalProps>
     }
   };
 
-  if (!isOpen || !pedido) return null;
-
   const handlePrint = () => {
     document.body.classList.add('printing-modal');
     window.print();
@@ -65,6 +63,8 @@ export const PlanillaRomaneoPrintModal: React.FC<PlanillaRomaneoPrintModalProps>
       document.body.classList.remove('printing-modal');
     };
   }, []);
+
+  if (!isOpen || !pedido) return null;
 
   // Agrupar y calcular totales del romaneo
   const detalles = pedido.detalles || [];

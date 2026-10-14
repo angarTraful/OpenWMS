@@ -1555,7 +1555,7 @@ export type Database = {
       subcategorias_articulos: {
         Row: {
           activo: boolean
-          categoria_id: string
+          categoria_id: string | null
           codigo: string
           creado_en: string
           descripcion: string | null
@@ -1564,7 +1564,7 @@ export type Database = {
         }
         Insert: {
           activo?: boolean
-          categoria_id: string
+          categoria_id?: string | null
           codigo: string
           creado_en?: string
           descripcion?: string | null
@@ -1573,7 +1573,7 @@ export type Database = {
         }
         Update: {
           activo?: boolean
-          categoria_id?: string
+          categoria_id?: string | null
           codigo?: string
           creado_en?: string
           descripcion?: string | null

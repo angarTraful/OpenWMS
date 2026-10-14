@@ -331,6 +331,19 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
           type: 'success',
           text: `¡Alocación FEFO exitosa! Se reservaron ${res.total_unidades_reservadas} unidades en ${res.tareas_creadas} tareas de picking.${msgBackorder}`,
         });
+
+        // Cargar pedido completo actualizado con tareas de picking y abrir automáticamente la Hoja de Trabajo para preparar
+        try {
+          const freshData = await pedidosApi.obtenerPedidoConDetalle(pedidoId);
+          if (freshData) {
+            setSelectedPedido(freshData);
+            setDetailData(freshData);
+            setPedidoForRemito(freshData);
+            setHojaTrabajoOpen(true);
+          }
+        } catch (fetchErr) {
+          console.warn('Aviso refrescando detalle para hoja de trabajo:', fetchErr);
+        }
       }
       onRefresh();
       if (selectedPedido?.id === pedidoId) {
@@ -711,8 +724,57 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                               </button>
                             )}
 
+                            {(ped.estado === 'asignado_picking' || ped.estado === 'en_picking') && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  setPedidoForRemito(ped);
+                                  setSelectedPedido(ped);
+                                  try {
+                                    const fresh = await pedidosApi.obtenerPedidoConDetalle(ped.id);
+                                    if (fresh) {
+                                      setDetailData(fresh);
+                                      setPedidoForRemito(fresh);
+                                      setSelectedPedido(fresh);
+                                    }
+                                  } catch (err) {
+                                    console.warn('Error precargando detalle para hoja de trabajo:', err);
+                                  }
+                                  setHojaTrabajoOpen(true);
+                                }}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-semibold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 dark:bg-[#0f2534] dark:hover:bg-[#153447] dark:text-[#75d1ff] dark:border-[#1b435d] transition-colors shadow-xs"
+                                title="Imprimir Hoja de Trabajo Operativa / Picking para preparar el pedido en almacén"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                                Hoja de Trabajo
+                              </button>
+                            )}
+
                             {ped.estado === 'preparado' && (
                               <>
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    setPedidoForRemito(ped);
+                                    setSelectedPedido(ped);
+                                    try {
+                                      const fresh = await pedidosApi.obtenerPedidoConDetalle(ped.id);
+                                      if (fresh) {
+                                        setDetailData(fresh);
+                                        setPedidoForRemito(fresh);
+                                        setSelectedPedido(fresh);
+                                      }
+                                    } catch (err) {
+                                      console.warn('Error precargando detalle para hoja de trabajo:', err);
+                                    }
+                                    setHojaTrabajoOpen(true);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 dark:bg-[#0f2534] dark:hover:bg-[#153447] dark:text-[#75d1ff] dark:border-[#1b435d] transition-colors shadow-xs"
+                                  title="Imprimir Hoja de Trabajo Operativa / Picking"
+                                >
+                                  <Printer className="w-3 h-3" />
+                                  Hoja de Trabajo
+                                </button>
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -797,7 +859,7 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
       {selectedPedido && (
         <ModalPortal>
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm print:hidden"
             onClick={() => setSelectedPedido(null)}
           >
               <div
@@ -850,6 +912,20 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                       >
                         <Zap className="w-3.5 h-3.5" />
                         Asignar Picking (FEFO/FIFO)
+                      </button>
+                    )}
+
+                    {(selectedPedido.estado === 'asignado_picking' || selectedPedido.estado === 'en_picking') && (
+                      <button
+                        onClick={() => {
+                          setPedidoForRemito(detailData || selectedPedido);
+                          setHojaTrabajoOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 dark:bg-[#0f2534] dark:hover:bg-[#153447] dark:text-[#75d1ff] dark:border-[#1b435d] transition-colors shadow-xs"
+                        title="Imprimir Hoja de Trabajo Operativa / Picking para preparar el pedido en almacén"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        Hoja de Trabajo
                       </button>
                     )}
 
@@ -2251,15 +2327,15 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
       <PlanillaRomaneoPrintModal
         isOpen={romaneoModalOpen}
         onClose={() => setRomaneoModalOpen(false)}
-        pedido={pedidoForRemito || selectedPedido}
+        pedido={(detailData && (detailData.id === pedidoForRemito?.id || detailData.id === selectedPedido?.id)) ? detailData : (pedidoForRemito || selectedPedido)}
       />
 
       {/* Modal de Rótulos de Expreso al Interior (62x100mm) */}
       <RotuloExpresoPrintModal
         isOpen={rotuloExpresoModalOpen}
         onClose={() => setRotuloExpresoModalOpen(false)}
-        pedido={pedidoForRemito || selectedPedido}
-        totalBultos={selectedPedido?.detalles?.length || 1}
+        pedido={(detailData && (detailData.id === pedidoForRemito?.id || detailData.id === selectedPedido?.id)) ? detailData : (pedidoForRemito || selectedPedido)}
+        totalBultos={(detailData && (detailData.id === pedidoForRemito?.id || detailData.id === selectedPedido?.id))?.detalles?.length || selectedPedido?.detalles?.length || 1}
       />
 
       {/* Modal Carga / Edición de Romaneo al Finalizar Pedido */}
@@ -2269,7 +2345,7 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
         tipo="pedido"
         idEntidad={pedidoForRemito?.id || selectedPedido?.id || ''}
         numeroReferencia={pedidoForRemito?.numero_pedido || selectedPedido?.numero_pedido || ''}
-        detallesArticulos={pedidoForRemito?.detalles || selectedPedido?.detalles || []}
+        detallesArticulos={(detailData && (detailData.id === pedidoForRemito?.id || detailData.id === selectedPedido?.id))?.detalles || pedidoForRemito?.detalles || selectedPedido?.detalles || []}
         onSuccess={onRefresh}
       />
 
@@ -2277,15 +2353,15 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
       <BrotherLabelPrinterModal
         isOpen={brotherLpnModalOpen}
         onClose={() => setBrotherLpnModalOpen(false)}
-        nroPedido={pedidoForRemito?.numero_pedido || selectedPedido?.numero_pedido || 'PED-3611'}
-        clienteNombre={pedidoForRemito?.cliente?.razon_social || selectedPedido?.cliente?.razon_social || 'OPEN CARGO'}
+        nroPedido={(detailData && (detailData.id === pedidoForRemito?.id || detailData.id === selectedPedido?.id))?.numero_pedido || pedidoForRemito?.numero_pedido || selectedPedido?.numero_pedido || 'PED-3611'}
+        clienteNombre={(detailData && (detailData.id === pedidoForRemito?.id || detailData.id === selectedPedido?.id))?.cliente?.razon_social || pedidoForRemito?.cliente?.razon_social || selectedPedido?.cliente?.razon_social || 'OPEN CARGO'}
       />
 
       {/* Modal de Hoja de Trabajo Operativa / Picking (A4) */}
       <HojaTrabajoOperativaPrintModal
         isOpen={hojaTrabajoOpen}
         onClose={() => setHojaTrabajoOpen(false)}
-        pedido={pedidoForRemito || selectedPedido}
+        pedido={(detailData && (detailData.id === pedidoForRemito?.id || detailData.id === selectedPedido?.id)) ? detailData : (pedidoForRemito || selectedPedido)}
       />
     </div>
   );

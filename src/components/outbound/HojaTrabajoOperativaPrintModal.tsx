@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   X,
   Printer,
@@ -25,8 +25,6 @@ export const HojaTrabajoOperativaPrintModal: React.FC<HojaTrabajoOperativaPrintM
   onClose,
   pedido,
 }) => {
-  if (!isOpen || !pedido) return null;
-
   const handlePrint = () => {
     document.body.classList.add('printing-modal');
     window.print();
@@ -42,6 +40,8 @@ export const HojaTrabajoOperativaPrintModal: React.FC<HojaTrabajoOperativaPrintM
       document.body.classList.remove('printing-modal');
     };
   }, []);
+
+  if (!isOpen || !pedido) return null;
 
   const detalles = pedido.detalles || [];
   const cliente = pedido.cliente || {};
@@ -215,12 +215,31 @@ export const HojaTrabajoOperativaPrintModal: React.FC<HojaTrabajoOperativaPrintM
                     {detalles.map((det: any, idx: number) => {
                       const art = det.articulo || {};
                       const cant = det.cantidad_solicitada || det.cantidad_esperada || 1;
-                      const ubicacion = det.ubicacion_sugerida?.codigo_etiqueta || art.posicion || 'Rondeau';
+                      
+                      // Resolver lote y ubicación asignados por FEFO o por defecto
+                      let loteDisplay = det.lote_declarado || '';
+                      let ubicacion = det.ubicacion_sugerida?.codigo_etiqueta || art.posicion || '';
+
+                      const tareas = det.tareas_picking || [];
+                      if (tareas.length > 0) {
+                        const primera = tareas[0];
+                        if (primera.observaciones_picking) {
+                          const matchPos = primera.observaciones_picking.match(/en Pos:\s*([^\s)]+)/i);
+                          if (matchPos && matchPos[1]) ubicacion = matchPos[1];
+                          const matchLote = primera.observaciones_picking.match(/Lote:\s*([^\s)]+)/i);
+                          if (matchLote && matchLote[1]) loteDisplay = matchLote[1];
+                        }
+                        if (!loteDisplay && primera.lote_id) {
+                          loteDisplay = primera.lote_id;
+                        }
+                      }
+                      if (!loteDisplay) loteDisplay = 'FEFO / Disp.';
+                      if (!ubicacion) ubicacion = 'Depósito Central';
 
                       return (
                         <tr key={idx} className="border-b border-black">
-                          <td className="p-1.5 font-mono text-[10px] border-r border-black">
-                            {det.lote_declarado || '26SJ0125-1'}
+                          <td className="p-1.5 font-mono text-[10px] border-r border-black font-semibold">
+                            {loteDisplay}
                           </td>
                           <td className="p-1.5 font-bold uppercase border-r border-black font-mono">
                             {art.nombre || art.sku || 'ART-001'}
@@ -228,7 +247,7 @@ export const HojaTrabajoOperativaPrintModal: React.FC<HojaTrabajoOperativaPrintM
                           <td className="p-1.5 text-[10px] border-r border-black">
                             {(art as any).descripcion_full || getDescripcionFull(art) || art.descripcion || ''}
                           </td>
-                          <td className="p-1.5 text-center font-semibold border-r border-black">
+                          <td className="p-1.5 text-center font-bold text-sky-950 border-r border-black">
                             {ubicacion}
                           </td>
                           <td className="p-1.5 text-center text-[9px] border-r border-black font-mono">

@@ -6,20 +6,20 @@ export type RecursoDescargaInsert = Database['public']['Tables']['ordenes_recepc
 
 export interface RomaneoExcepcion {
   id?: string;
-  recepcion_id?: string;
-  recepcion_detalle_id?: string;
-  pedido_id?: string;
-  orden_salida_id?: string;
+  recepcion_id?: string | null;
+  recepcion_detalle_id?: string | null;
+  pedido_id?: string | null;
+  orden_salida_id?: string | null;
   articulo_id: string;
   nro_secuencia: number;
-  codigo_etiqueta_lpn?: string;
+  codigo_etiqueta_lpn?: string | null;
   medida_estandar: number;
   medida_real: number;
   unidad_medida: string;
-  diferencia?: number;
-  observaciones?: string;
-  es_estandar?: boolean;
-  imprimir_en_reverso?: boolean;
+  diferencia?: number | null;
+  observaciones?: string | null;
+  es_estandar?: boolean | null;
+  imprimir_en_reverso?: boolean | null;
   articulo?: any;
 }
 

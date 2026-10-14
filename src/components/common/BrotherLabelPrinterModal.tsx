@@ -39,6 +39,22 @@ export const BrotherLabelPrinterModal: React.FC<BrotherLabelPrinterModalProps> =
   nroPedido = 'ef3d6ce3',
   clienteNombre = 'POSTO BLANCO SRL',
 }) => {
+  const handleImprimir = () => {
+    document.body.classList.add('printing-modal');
+    window.print();
+  };
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      document.body.classList.remove('printing-modal');
+    };
+    window.addEventListener('afterprint', handleAfterPrint);
+    return () => {
+      window.removeEventListener('afterprint', handleAfterPrint);
+      document.body.classList.remove('printing-modal');
+    };
+  }, []);
+
   if (!isOpen) return null;
 
   const itemsToPrint: EtiquetaRolloItem[] = (listaEtiquetas && listaEtiquetas.length > 0)
@@ -59,22 +75,6 @@ export const BrotherLabelPrinterModal: React.FC<BrotherLabelPrinterModalProps> =
         nroPedidoOrOc: nroPedido,
       },
     ];
-
-  const handleImprimir = () => {
-    document.body.classList.add('printing-modal');
-    window.print();
-  };
-
-  useEffect(() => {
-    const handleAfterPrint = () => {
-      document.body.classList.remove('printing-modal');
-    };
-    window.addEventListener('afterprint', handleAfterPrint);
-    return () => {
-      window.removeEventListener('afterprint', handleAfterPrint);
-      document.body.classList.remove('printing-modal');
-    };
-  }, []);
 
   return (
     <ModalPortal>

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import {
   X,
   Printer,
@@ -29,22 +29,6 @@ export const HojaRutaPrintModal: React.FC<HojaRutaPrintModalProps> = ({
 }) => {
   const printAreaRef = useRef<HTMLDivElement>(null);
 
-  if (!isOpen || !ruta) return null;
-
-  const paradas = ruta.paradas || [];
-  const totalBultos = paradas.reduce(
-    (acc: number, p: any) => acc + Number(p.remito?.total_bultos || 1),
-    0
-  );
-  const totalPeso = paradas.reduce(
-    (acc: number, p: any) => acc + Number(p.remito?.peso_total_kg || 0),
-    0
-  );
-  const totalVolumen = paradas.reduce(
-    (acc: number, p: any) => acc + Number(p.remito?.volumen_total_m3 || 0),
-    0
-  );
-
   const handlePrint = () => {
     document.body.classList.add('printing-modal');
     window.print();
@@ -60,6 +44,22 @@ export const HojaRutaPrintModal: React.FC<HojaRutaPrintModalProps> = ({
       document.body.classList.remove('printing-modal');
     };
   }, []);
+
+  if (!isOpen || !ruta) return null;
+
+  const paradas = ruta.paradas || [];
+  const totalBultos = paradas.reduce(
+    (acc: number, p: any) => acc + Number(p.remito?.total_bultos || 1),
+    0
+  );
+  const totalPeso = paradas.reduce(
+    (acc: number, p: any) => acc + Number(p.remito?.peso_total_kg || 0),
+    0
+  );
+  const totalVolumen = paradas.reduce(
+    (acc: number, p: any) => acc + Number(p.remito?.volumen_total_m3 || 0),
+    0
+  );
 
   const googleMapsUrl = despachosApi.generarGoogleMapsRutaCompletaUrl(
     paradas,
