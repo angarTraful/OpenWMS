@@ -30,6 +30,7 @@ import { MastersManagementView } from './components/masters/MastersManagementVie
 import { ClienteModal } from './components/masters/ClienteModal';
 import { RfTerminalView } from './components/rf/RfTerminalView';
 import { ChoferRutaTabletView } from './components/outbound/ChoferRutaTabletView';
+import { ImportarMovimientosModal } from './components/inventory/ImportarMovimientosModal';
 
 
 import {
@@ -86,6 +87,7 @@ export function App() {
   const [selectedClienteId, setSelectedClienteId] = useState<string>('');
   const [modalNuevoClienteGlobalOpen, setModalNuevoClienteGlobalOpen] = useState(false);
   const [choferSelectedRutaId, setChoferSelectedRutaId] = useState<string | null>(null);
+  const [isImportMovimientosOpen, setIsImportMovimientosOpen] = useState(false);
 
   // Operational Data
   const [inventario, setInventario] = useState<any[]>([]);
@@ -398,6 +400,7 @@ export function App() {
                     setKardexFiltroArticuloId(artId || null);
                     setCurrentTab('kardex');
                   }}
+                  onOpenImportarMovimientos={() => setIsImportMovimientosOpen(true)}
                   isLoading={isLoading}
                 />
 
@@ -449,6 +452,8 @@ export function App() {
                 movimientos={kardex}
                 inventario={inventario}
                 pedidos={pedidos}
+                clientes={clientes}
+                almacenes={almacenes}
                 onRefresh={fetchData}
                 isLoading={isLoading}
                 filtroArticuloId={kardexFiltroArticuloId}
@@ -540,6 +545,17 @@ export function App() {
           setClientes((prev) => [...prev, nuevoCli]);
           setSelectedClienteId(nuevoCli.id);
         }}
+      />
+
+      {/* Modal Global para Importación Masiva de Movimientos CSV */}
+      <ImportarMovimientosModal
+        isOpen={isImportMovimientosOpen}
+        onClose={() => setIsImportMovimientosOpen(false)}
+        onSuccess={fetchData}
+        clientes={clientes}
+        almacenes={almacenes}
+        defaultClienteId={selectedClienteId}
+        defaultAlmacenId={selectedAlmacenId}
       />
     </div>
   );

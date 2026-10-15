@@ -119,6 +119,61 @@ curl -X POST "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/obtener_clien
   -d '{"p_clientes_ids": ["000"]}'
 ```
 
+### Ejemplo de Procesamiento de Movimientos de Inventario (cURL / Postman / CSV Importer)
+
+**1. Movimiento Unitario Atómico (`wms_procesar_movimiento_inventario`):**
+```bash
+curl -X POST "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/wms_procesar_movimiento_inventario" \
+  -H "apikey: <TU_SUPABASE_ANON_KEY>" \
+  -H "Authorization: Bearer <TU_SUPABASE_ANON_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "p_movimiento": {
+      "cliente": "001",
+      "sku": "SKU-ALIM-001",
+      "tipo_movimiento": "recepcion",
+      "cantidad": 50,
+      "lote": "L-2026-A1",
+      "fecha_vencimiento": "2027-06-30",
+      "ubicacion_destino": "REC-01",
+      "almacen": "ALM-CENTRAL",
+      "pallet": "PLT-001",
+      "documento_referencia": "REC-9941",
+      "notas": "Ingreso inicial de mercadería por importador CSV"
+    }
+  }'
+```
+
+**2. Carga Masiva en Lote (`wms_importar_movimientos_inventario`):**
+```bash
+curl -X POST "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/wms_importar_movimientos_inventario" \
+  -H "apikey: <TU_SUPABASE_ANON_KEY>" \
+  -H "Authorization: Bearer <TU_SUPABASE_ANON_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "p_movimientos": [
+      {
+        "cliente": "001",
+        "sku": "SKU-ALIM-001",
+        "tipo_movimiento": "recepcion",
+        "cantidad": 50,
+        "lote": "L-2026-A1",
+        "ubicacion_destino": "REC-01"
+      },
+      {
+        "cliente": "001",
+        "sku": "SKU-ALIM-001",
+        "tipo_movimiento": "transferencia",
+        "cantidad": 10,
+        "lote": "L-2026-A1",
+        "ubicacion_origen": "REC-01",
+        "ubicacion_destino": "A1-P01-E01-N01"
+      }
+    ],
+    "p_ignorar_errores": false
+  }'
+```
+
 ---
 
 ## 2. Servicios del SDK TypeScript (`src/api/`)
@@ -133,7 +188,9 @@ import {
   articulosApi, 
   almacenApi, 
   recepcionesApi, 
-  inventarioApi, 
+  inventarioApi,
+  procesarMovimientoInventario,
+  importarMovimientosMasivos,
   pedidosApi, 
   despachosApi 
 } from './src/api';
@@ -163,12 +220,32 @@ import {
   * Incrementa el stock en `inventario` en la ubicación final.
   * Registra el asiento en el Kardex (`movimientos_inventario`).
 
-### D. Inventario y Cubicaje M3 (`inventarioApi`)
+### D. Inventario, Cubicaje M3 y Movimientos (`inventarioApi`)
 * `consultarStock({ clienteId, articuloId, ubicacionId, ... })`: Consulta existencias filtradas con datos del lote, pallet LPN y M3 ocupados.
 * `obtenerM3OcupadosPorCliente(clienteId)`: **Cálculo directo del total de M3 ocupados por el cliente para la facturación 3PL del espacio**.
 * `obtenerStockConsolidadoPorCliente(clienteId)`: **Stock consolidado por artículo en JSON** (`disponible`, `reservado`, `total`/`stockFisico`, `stockFuturo`, `volumenM3Total`). Invoca la función RPC de Supabase `wms_obtener_stock_consolidado_por_cliente` / `obtener_stock_consolidado_por_cliente` (admite UUID, código o teléfono del cliente).
 * `obtenerPalletPorCodigo(codigoLpn)`: Consulta todo el contenido de un pallet específico (bultos, artículos, M3 y ubicación actual).
 * `consultarKardex(clienteId, articuloId)`: Trazabilidad inmutable de movimientos físicos.
+* `procesarMovimientoInventario(movimiento)`: **Procesa un movimiento individual de inventario**. Ejecuta la lógica transaccional de entrada, salida o traslado según `tipo_movimiento`, valida stock disponible en origen, genera el lote si no existe, actualiza el registro en `inventario` con cubicaje M3 exacto y registra el asiento inmutable en `movimientos_inventario`.
+* `importarMovimientosMasivos(movimientos, ignorarErrores?)`: **Importación masiva de movimientos en lote (CSV / JSON)**. Soporta modo estricto (rollback total ante cualquier error) o modo permisivo (`ignorarErrores: true`) que aplica las filas válidas y devuelve el reporte de fallidas.
+
+#### Estructura del Archivo CSV de Movimientos de Inventario
+Columnas admitidas (separadas por `,`, `;` o tabulación `\t`):
+1. `CLIENTE`: Código comercial (`001`), Razón Social o UUID.
+2. `SKU`: Código SKU, código de barras o ID del artículo.
+3. `TIPO_MOVIMIENTO`:
+   * **Entradas (`recepcion`, `ajuste_positivo`):** Aumenta stock disponible y volumen M3 en la ubicación de destino.
+   * **Salidas (`despacho`, `ajuste_negativo`, `merma`):** Valida stock y descuenta de la ubicación de origen.
+   * **Traslados (`transferencia`, `putaway`, `picking`):** Valida y descuenta en origen y suma en destino sin alterar el total global del cliente.
+4. `CANTIDAD`: Cantidad numérica (> 0).
+5. `LOTE`: Número o código de lote (si no existe, se da de alta automáticamente).
+6. `FECHA_VENCIMIENTO`: Opcional (`YYYY-MM-DD`).
+7. `UBICACION_ORIGEN`: Código de etiqueta de la ubicación de origen (obligatorio para salidas y transferencias).
+8. `UBICACION_DESTINO`: Código de etiqueta de la ubicación de destino (obligatorio para entradas y transferencias).
+9. `ALMACEN`: Código del almacén (opcional).
+10. `PALLET`: Código LPN opcional (ej: `PLT-001`).
+11. `DOCUMENTO_REFERENCIA`: Número de remito, orden de compra o comprobante.
+12. `NOTAS`: Motivo u observaciones.
 
 ### E. Pedidos y Preparación Outbound (`pedidosApi`)
 * `crearPedido(pedido, detalles)`: Registra el pedido con cliente, destinatario, prioridad y renglones solicitados.
@@ -206,7 +283,7 @@ import {
 
 ### H. Usuarios, Roles y Permisos 3PL (`usuariosApi`)
 * `listarUsuarios(soloActivos?)`: Consulta todos los usuarios del sistema junto a su lista de roles asociados (`usuarios_roles` -> `roles`).
-* `obtenerUsuarioPorId(id)`: Retorna el usuario por su ID UUID.
+* `obtenerUsuarioPorId(id, soloActivos?)`: **Devuelve el usuario completo en formato JSON con sus roles asignados** a partir de su ID UUID mediante RPC `wms_obtener_usuario_por_id` o consulta directa resiliente.
 * `obtenerUsuarioPorTelefono(telefono, soloActivos?)`: Búsqueda flexible por teléfono mediante RPC `wms_obtener_usuario_por_telefono` o PostgREST (soporta formatos internacionales, con o sin signos y espacios).
 * `actualizarUltimoAccesoBot(identificador, fecha?)`: **Actualiza la fecha de último acceso del bot (`fecha_ultimo_acceso_bot`)**. Resuelve al usuario por UUID, teléfono exacto o normalizado, email o nombre de usuario. Si no se provee fecha, toma `now()`.
 * `listarUsuariosPorClienteCodigo(clienteCodigo)`: Devuelve los usuarios con acceso al código del cliente. Incluye automáticamente a aquellos con `'000'` (acceso global a todos los clientes).

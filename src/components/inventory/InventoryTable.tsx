@@ -20,6 +20,7 @@ import {
   ArrowDownLeft,
   ChevronRight,
   Clock,
+  Upload,
 } from 'lucide-react';
 import { cn, formatNumber, formatM3, formatDate, formatDateTime } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
@@ -43,6 +44,7 @@ interface InventoryTableProps {
   selectedItem: any | null;
   onSelectItem: (item: any) => void;
   onViewKardex?: (clienteId: string, articuloId: string) => void;
+  onOpenImportarMovimientos?: () => void;
   isLoading?: boolean;
 }
 
@@ -61,6 +63,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
   selectedItem,
   onSelectItem,
   onViewKardex,
+  onOpenImportarMovimientos,
   isLoading = false,
 }) => {
   const [vistaActiva, setVistaActiva] = useState<VistaInventario>('articulo');
@@ -764,6 +767,18 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                 ? 'clientes'
                 : 'registros'}
             </div>
+
+            {onOpenImportarMovimientos && (
+              <button
+                type="button"
+                onClick={onOpenImportarMovimientos}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white shadow-xs transition-colors shrink-0"
+                title="Cargar movimientos de inventario por archivo CSV"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Importar Movimientos (CSV)</span>
+              </button>
+            )}
           </div>
         </div>
 

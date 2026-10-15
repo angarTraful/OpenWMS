@@ -1,12 +1,13 @@
 export { supabase } from './supabaseClient';
 export { clientesApi, obtenerClientesPorId, obtenerClientePorTelefono, normalizarTelefono } from './clientesApi';
 export type { ClientesIdsParam } from './clientesApi';
-export { usuariosApi, obtenerUsuarioPorTelefono, actualizarUltimoAccesoBot, CODIGO_TODOS_LOS_CLIENTES } from './usuariosApi';
+export { usuariosApi, obtenerUsuarioPorId, obtenerUsuarioPorTelefono, actualizarUltimoAccesoBot, CODIGO_TODOS_LOS_CLIENTES } from './usuariosApi';
 export type { Usuario, UsuarioBase, UsuarioInsert, UsuarioUpdate, Rol, RolInsert, RolUpdate, TipoRol } from './usuariosApi';
 export { articulosApi } from './articulosApi';
 export { almacenApi } from './almacenApi';
 export { recepcionesApi } from './recepcionesApi';
-export { inventarioApi, obtenerStockConsolidadoPorCliente } from './inventarioApi';
+export { inventarioApi, obtenerStockConsolidadoPorCliente, procesarMovimientoInventario, importarMovimientosMasivos } from './inventarioApi';
+export type { MovimientoInventarioInput, ResultadoImportacionMovimientos } from './inventarioApi';
 export { pedidosApi, buscarPedidosPorCliente } from './pedidosApi';
 export type { PedidoEnEjecucion } from './pedidosApi';
 export { despachosApi } from './despachosApi';

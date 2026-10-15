@@ -16,10 +16,12 @@ import {
   Package,
   ArrowRightLeft,
   Sparkles,
+  Upload,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { formatDateTime, formatNumber, formatM3, formatDate, cn } from '@/lib/utils';
 import { getDescripcionFull } from '@/api/articulosApi';
+import { ImportarMovimientosModal } from '@/components/inventory/ImportarMovimientosModal';
 import {
   TableContainer,
   SortableHeaderCell,
@@ -63,6 +65,8 @@ interface KardexViewProps {
   movimientos: any[];
   inventario?: any[];
   pedidos?: any[];
+  clientes?: any[];
+  almacenes?: any[];
   onRefresh: () => void;
   isLoading?: boolean;
   filtroArticuloId?: string | null;
@@ -83,6 +87,8 @@ export const KardexView: React.FC<KardexViewProps> = ({
   movimientos,
   inventario = [],
   pedidos = [],
+  clientes = [],
+  almacenes = [],
   onRefresh,
   isLoading = false,
   filtroArticuloId,
@@ -95,6 +101,7 @@ export const KardexView: React.FC<KardexViewProps> = ({
   const [sortField, setSortField] = useState<KardexSortField>('fecha_hora');
   const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [selectedArticuloId, setSelectedArticuloId] = useState<string | null>(filtroArticuloId || null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
 
   // Filtro de Rango Fecha / Hora (Inicio y Fin)
   const [fechaHoraDesde, setFechaHoraDesde] = useState<string>('');
@@ -458,15 +465,27 @@ export const KardexView: React.FC<KardexViewProps> = ({
           </p>
         </div>
 
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={onRefresh}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-[#333333] bg-white dark:bg-[#1a1919] hover:bg-slate-50 dark:hover:bg-[#201f1f] text-slate-700 dark:text-[#cdc3d4] hover:text-slate-900 dark:hover:text-[#e5e2e1] transition-colors shadow-xs"
-        >
-          <RefreshCw className="w-3.5 h-3.5 text-violet-600 dark:text-[#dab9ff]" />
-          <span>Actualizar Kardex</span>
-        </motion.button>
+        <div className="flex items-center gap-2">
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-600 hover:bg-violet-700 text-white shadow-xs transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Importar Movimientos (CSV)</span>
+          </motion.button>
+
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={onRefresh}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-[#333333] bg-white dark:bg-[#1a1919] hover:bg-slate-50 dark:hover:bg-[#201f1f] text-slate-700 dark:text-[#cdc3d4] hover:text-slate-900 dark:hover:text-[#e5e2e1] transition-colors shadow-xs"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-violet-600 dark:text-[#dab9ff]" />
+            <span>Actualizar Kardex</span>
+          </motion.button>
+        </div>
       </div>
 
       {/* Banner de Filtro Individual por Artículo */}
@@ -1096,6 +1115,17 @@ export const KardexView: React.FC<KardexViewProps> = ({
           onPageChange={setCurrentPage}
         />
       </TableContainer>
+
+      {/* Modal de Importación de Movimientos CSV */}
+      <ImportarMovimientosModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onSuccess={() => {
+          onRefresh();
+        }}
+        clientes={clientes}
+        almacenes={almacenes}
+      />
     </div>
   );
 };

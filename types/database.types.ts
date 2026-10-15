@@ -2198,6 +2198,33 @@ export type Database = {
         }
         Returns: Json
       }
+      wms_obtener_usuario_por_id: {
+        Args: {
+          p_usuario_id: string
+          p_solo_activos?: boolean
+        }
+        Returns: Json
+      }
+      obtener_usuario_por_id: {
+        Args: {
+          p_usuario_id: string
+          p_solo_activos?: boolean
+        }
+        Returns: Json
+      }
+      wms_procesar_movimiento_inventario: {
+        Args: {
+          p_movimiento: Json
+        }
+        Returns: Json
+      }
+      wms_importar_movimientos_inventario: {
+        Args: {
+          p_movimientos: Json
+          p_ignorar_errores?: boolean
+        }
+        Returns: Json
+      }
     }
     Enums: {
       estado_orden_salida_enum:
@@ -2452,6 +2479,7 @@ export const Constants = {
         "despaletizado",
         "paletizado_despacho",
         "picking",
+        "despacho",
         "ajuste_positivo",
         "ajuste_negativo",
         "transferencia",

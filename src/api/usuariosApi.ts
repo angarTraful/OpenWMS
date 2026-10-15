@@ -280,12 +280,79 @@ export async function listarUsuariosPorClienteCodigo(
   }
 }
 
+/**
+ * Obtiene un usuario en formato JSON a partir de su ID (UUID).
+ * Invoca prioritariamente la RPC de Supabase 'wms_obtener_usuario_por_id'
+ * con fallback automático a PostgREST por resiliencia.
+ *
+ * @param usuarioId ID UUID del usuario
+ * @param soloActivos Opcional. Si es true, retorna null si el usuario está inactivo (por defecto false)
+ * @returns Objeto Usuario con sus roles asociados o null si no se encuentra
+ */
+export async function obtenerUsuarioPorId(
+  usuarioId: string,
+  soloActivos = false
+): Promise<Usuario | null> {
+  if (!usuarioId || typeof usuarioId !== 'string' || !usuarioId.trim()) {
+    return null;
+  }
+
+  const cleanId = usuarioId.trim();
+
+  // 1. Invocar RPC nativa de Supabase 'wms_obtener_usuario_por_id'
+  try {
+    const { data: rpcData, error: rpcError } = await (supabase.rpc as any)(
+      'wms_obtener_usuario_por_id',
+      {
+        p_usuario_id: cleanId,
+        p_solo_activos: soloActivos,
+      }
+    );
+
+    if (!rpcError && rpcData && typeof rpcData === 'object') {
+      return rpcData as unknown as Usuario;
+    }
+    if (rpcError && !rpcError.message?.includes('schema cache')) {
+      console.warn('RPC wms_obtener_usuario_por_id fallback:', rpcError.message);
+    }
+  } catch (rpcErr: any) {
+    console.warn('Fallback en obtenerUsuarioPorId:', rpcErr?.message);
+  }
+
+  // 2. Fallback de consulta directa vía PostgREST
+  try {
+    let query = supabase
+      .from('usuarios')
+      .select(`
+        *,
+        usuarios_roles(
+          rol:roles(*)
+        )
+      `)
+      .eq('id', cleanId);
+
+    if (soloActivos) query = query.eq('activo', true);
+
+    const { data, error } = await query.maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+
+    const u = data as any;
+    const roles = (u.usuarios_roles || []).map((ur: any) => ur.rol).filter(Boolean);
+    return { ...u, roles } as Usuario;
+  } catch (err) {
+    console.error('Error al obtener usuario por ID:', err);
+    throw err;
+  }
+}
+
 export const usuariosApi = {
   CODIGO_TODOS_LOS_CLIENTES,
   normalizarTelefono,
   obtenerUsuarioPorTelefono,
   actualizarUltimoAccesoBot,
   listarUsuariosPorClienteCodigo,
+  obtenerUsuarioPorId,
 
   // --- CRUD Usuarios ---
   async listarUsuarios(soloActivos = false): Promise<Usuario[]> {
@@ -310,26 +377,6 @@ export const usuariosApi = {
       ...u,
       roles: (u.usuarios_roles || []).map((ur: any) => ur.rol).filter(Boolean),
     })) as Usuario[];
-  },
-
-  async obtenerUsuarioPorId(id: string): Promise<Usuario | null> {
-    const { data, error } = await supabase
-      .from('usuarios')
-      .select(`
-        *,
-        usuarios_roles(
-          rol:roles(*)
-        )
-      `)
-      .eq('id', id)
-      .single();
-
-    if (error) throw error;
-    if (!data) return null;
-
-    const u = data as any;
-    const roles = (u.usuarios_roles || []).map((ur: any) => ur.rol).filter(Boolean);
-    return { ...u, roles } as Usuario;
   },
 
   async crearUsuario(
