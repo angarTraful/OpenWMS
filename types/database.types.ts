@@ -2062,6 +2062,20 @@ export type Database = {
         }
         Returns: Json
       }
+      obtener_clientes_por_id: {
+        Args: {
+          p_clientes_ids?: Json
+          p_solo_activos?: boolean
+        }
+        Returns: Json
+      }
+      wms_obtener_clientes_por_id: {
+        Args: {
+          p_clientes_ids?: Json
+          p_solo_activos?: boolean
+        }
+        Returns: Json
+      }
       obtener_cliente_por_telefono: {
         Args: {
           p_telefono: string

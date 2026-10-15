@@ -283,11 +283,134 @@ export async function actualizarUltimoAccesoBot(
   return actualizarUltimoAccesoBotUsuario(identificador, fecha);
 }
 
+/**
+ * Tipo flexible para el parámetro de entrada de 'obtenerClientesPorId'.
+ * Admite:
+ * 1. El objeto Usuario o JSON completo devuelto por 'obtener_usuario_por_telefono' (que contiene clientes_ids).
+ * 2. Un array de IDs o códigos: string[] (ej: ['000'], ['CLI01', 'CLI02']).
+ * 3. Un ID o código único: string (ej: '001', '000').
+ * 4. Un objeto que contenga la propiedad 'clientes_ids' o 'p_clientes_ids'.
+ */
+export type ClientesIdsParam =
+  | string[]
+  | string
+  | { clientes_ids?: string[] | null; [key: string]: any }
+  | Usuario
+  | null
+  | undefined;
+
+/**
+ * Extrae y normaliza la lista de identificadores a partir de múltiples formatos de entrada:
+ * objeto usuario de obtener_usuario_por_telefono, array de strings, o string único.
+ */
+export function normalizarClientesIdsInput(input: ClientesIdsParam): string[] {
+  if (!input) return [];
+
+  if (Array.isArray(input)) {
+    return input.map((id) => String(id).trim()).filter(Boolean);
+  }
+
+  if (typeof input === 'object') {
+    const rawList =
+      input.clientes_ids ||
+      (input as any).p_clientes_ids ||
+      (input as any).ClientesIds ||
+      (input as any).clientesIds;
+
+    if (Array.isArray(rawList)) {
+      return rawList.map((id) => String(id).trim()).filter(Boolean);
+    }
+    if (typeof rawList === 'string' && rawList.trim()) {
+      return rawList.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    if (!trimmed) return [];
+    if (trimmed.includes(',')) {
+      return trimmed.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+    return [trimmed];
+  }
+
+  return [];
+}
+
+/**
+ * Obtiene la lista de clientes depositantes correspondientes a los identificadores provistos.
+ * Diseñada específicamente para recibir directamente el resultado de 'obtener_usuario_por_telefono'
+ * (o su array 'clientes_ids').
+ * 
+ * Reglas de negocio:
+ * - Si contiene el código '000', retorna todos los clientes depositantes autorizados.
+ * - Soporta tanto códigos comerciales de cliente (ej: '001', 'CLI01') como UUIDs de base de datos.
+ * - Invoca prioritariamente la RPC 'wms_obtener_clientes_por_id' de Supabase.
+ * - Incluye fallback automático a PostgREST por compatibilidad y resiliencia offline.
+ *
+ * @param input Objeto devuelto por obtener_usuario_por_telefono, array de clientes_ids o código/ID
+ * @param soloActivos Opcional. Si es true, filtra solo clientes con activo = true (por defecto false)
+ * @returns Promesa con el array de clientes en formato JSON
+ */
+export async function obtenerClientesPorId(
+  input: ClientesIdsParam,
+  soloActivos = false
+): Promise<Cliente[]> {
+  const ids = normalizarClientesIdsInput(input);
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const tieneTodos = ids.includes('000');
+
+  // 1. Invocar RPC de Supabase 'wms_obtener_clientes_por_id'
+  try {
+    const { data: rpcData, error: rpcError } = await (supabase.rpc as any)(
+      'wms_obtener_clientes_por_id',
+      {
+        p_clientes_ids: ids,
+        p_solo_activos: soloActivos,
+      }
+    );
+
+    if (!rpcError && Array.isArray(rpcData)) {
+      return rpcData as Cliente[];
+    }
+  } catch (rpcErr) {
+    console.warn('Fallback en obtenerClientesPorId:', rpcErr);
+  }
+
+  // 2. Fallback de consulta directa a la tabla 'clientes'
+  try {
+    let query = supabase.from('clientes').select('*');
+    if (soloActivos) query = query.eq('activo', true);
+
+    const { data, error } = await query.order('razon_social', { ascending: true });
+    if (error) throw error;
+
+    const lista = (data || []) as Cliente[];
+
+    // Si tiene '000', tiene permiso para todos los clientes
+    if (tieneTodos) {
+      return lista;
+    }
+
+    // Filtrar en memoria por coincidencia exacta con codigo o id UUID
+    const idsSet = new Set(ids);
+    return lista.filter((c) => idsSet.has(c.codigo) || idsSet.has(c.id));
+  } catch (err) {
+    console.error('Error al obtener clientes por IDs:', err);
+    throw err;
+  }
+}
+
 export const clientesApi = {
   // Exponer utilidades para uso directo
   normalizarDireccion,
   normalizarTexto,
   normalizarTelefono,
+  normalizarClientesIdsInput,
   obtenerBaseRazonSocial,
   generarSiguienteCodigoSucursal,
   buscarDestinatarioPorDireccion,
@@ -313,6 +436,7 @@ export const clientesApi = {
     return data;
   },
 
+  obtenerClientesPorId,
   obtenerClientePorTelefono,
 
   async crearCliente(cliente: ClienteInsert) {

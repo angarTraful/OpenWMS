@@ -82,6 +82,43 @@ curl -X POST "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/wms_obtener_u
   -d '{"p_telefono": "+54 9 11 1234-5678"}'
 ```
 
+### Ejemplo de Consulta RPC de Clientes por ID / clientes_ids (cURL / Postman / Bot)
+
+La RPC **`wms_obtener_clientes_por_id`** (y su alias **`obtener_clientes_por_id`**) está diseñada específicamente para resolver los clientes autorizados a partir del resultado de `obtener_usuario_por_telefono`.
+
+**Opción A: Pasando el objeto retornado por `obtener_usuario_por_telefono` directamente:**
+```bash
+curl -X POST "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/obtener_clientes_por_id" \
+  -H "apikey: <TU_SUPABASE_ANON_KEY>" \
+  -H "Authorization: Bearer <TU_SUPABASE_ANON_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "p_clientes_ids": {
+      "id": "e5c141d4-831e-450a-9d95-88db09c869ef",
+      "nombre_usuario": "Juan Perez",
+      "clientes_ids": ["001", "002"]
+    }
+  }'
+```
+
+**Opción B: Pasando el array `clientes_ids` directo:**
+```bash
+curl -X POST "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/obtener_clientes_por_id" \
+  -H "apikey: <TU_SUPABASE_ANON_KEY>" \
+  -H "Authorization: Bearer <TU_SUPABASE_ANON_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"p_clientes_ids": ["001", "002"]}'
+```
+
+**Opción C: Acceso Global con comodín `"000"` (devuelve todos los clientes depositantes):**
+```bash
+curl -X POST "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/obtener_clientes_por_id" \
+  -H "apikey: <TU_SUPABASE_ANON_KEY>" \
+  -H "Authorization: Bearer <TU_SUPABASE_ANON_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"p_clientes_ids": ["000"]}'
+```
+
 ---
 
 ## 2. Servicios del SDK TypeScript (`src/api/`)
@@ -91,6 +128,7 @@ En la carpeta [src/api/](file:///c:/Users/intra/Documents/SISTEMAS/WMS_SSD/src/a
 ```typescript
 import { 
   clientesApi, 
+  obtenerClientesPorId,
   usuariosApi,
   articulosApi, 
   almacenApi, 
@@ -104,6 +142,7 @@ import {
 ### A. Clientes y Destinatarios (`clientesApi`)
 * `listarClientes(soloActivos?)`: Devuelve los clientes depositantes 3PL.
 * `obtenerClientePorId(id)`: Devuelve el cliente por su ID UUID.
+* `obtenerClientesPorId(input, soloActivos?)`: **Devuelve la lista de clientes depositantes** a partir del retorno de `obtenerUsuarioPorTelefono` o de su array `clientes_ids`. Resuelve códigos comerciales (`'001'`), UUIDs o `'000'` (todos los clientes).
 * `obtenerClientePorTelefono(telefono, soloActivos?)`: Devuelve el objeto cliente en formato JSON dado su número de teléfono.
 * `obtenerUsuariosRelacionados(codigoCliente)`: **Devuelve los usuarios vinculados al cliente**, incluyendo usuarios asignados explícitamente a su código o usuarios con permiso global `'000'` (Todos).
 * `actualizarUltimoAccesoBot(identificador, fecha?)`: Delega la actualización a `usuariosApi.actualizarUltimoAccesoBot`.
@@ -186,6 +225,14 @@ import {
 import { recepcionesApi, inventarioApi, pedidosApi } from './src/api';
 
 async function ejemploFlujo() {
+  // 0. Flujo Bot WhatsApp / Integración: Identificar usuario y obtener sus clientes asignados
+  const usuario = await usuariosApi.obtenerUsuarioPorTelefono('+54 9 11 1234-5678');
+  if (usuario) {
+    // Se puede pasar directamente el objeto 'usuario' (o 'usuario.clientes_ids')
+    const clientesAsignados = await clientesApi.obtenerClientesPorId(usuario);
+    console.log(`Usuario autenticado: ${usuario.nombre_usuario}. Clientes autorizados:`, clientesAsignados);
+  }
+
   // 1. Confirmar un ingreso de mercadería en rack con pallet LPN
   const resultadoPutaway = await recepcionesApi.confirmarPutaway({
     tareaId: '98d5a1bc-7821-4f12-9c32-b89512345678',

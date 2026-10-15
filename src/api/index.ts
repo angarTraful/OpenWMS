@@ -1,5 +1,6 @@
 export { supabase } from './supabaseClient';
-export { clientesApi, obtenerClientePorTelefono, normalizarTelefono } from './clientesApi';
+export { clientesApi, obtenerClientesPorId, obtenerClientePorTelefono, normalizarTelefono } from './clientesApi';
+export type { ClientesIdsParam } from './clientesApi';
 export { usuariosApi, obtenerUsuarioPorTelefono, actualizarUltimoAccesoBot, CODIGO_TODOS_LOS_CLIENTES } from './usuariosApi';
 export type { Usuario, UsuarioBase, UsuarioInsert, UsuarioUpdate, Rol, RolInsert, RolUpdate, TipoRol } from './usuariosApi';
 export { articulosApi } from './articulosApi';
