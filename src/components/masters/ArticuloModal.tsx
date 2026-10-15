@@ -678,7 +678,7 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                     min="0"
                     required
                     value={pesoGw}
-                    onChange={(e) => setPesoGw(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => setPesoGw(parseFloat(e.target.value) || 1)}
                     className="w-full px-2.5 py-1.5 rounded bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs font-mono font-bold text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:border-violet-500 dark:focus:border-[#dab9ff]"
                   />
                 </div>
@@ -690,7 +690,7 @@ export const ArticuloModal: React.FC<ArticuloModalProps> = ({
                   </label>
                   <input
                     type="number"
-                    step="0.0001"
+                    step="0.0100"
                     min="0"
                     required
                     value={medidaM3}

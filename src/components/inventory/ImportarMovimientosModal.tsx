@@ -685,11 +685,10 @@ export const ImportarMovimientosModal: React.FC<ImportarMovimientosModalProps> =
           {/* Stepper Wizard Indicator */}
           <div className="grid grid-cols-3 border-b border-slate-200 dark:border-[#333333] text-xs font-semibold text-center bg-white dark:bg-[#1a1919]">
             <div
-              className={`py-2.5 px-4 flex items-center justify-center gap-2 border-b-2 transition-colors ${
-                step === 1
+              className={`py-2.5 px-4 flex items-center justify-center gap-2 border-b-2 transition-colors ${step === 1
                   ? 'border-violet-600 text-violet-700 dark:border-[#dab9ff] dark:text-[#dab9ff] bg-violet-50/40 dark:bg-[#dab9ff]/5'
                   : 'border-transparent text-slate-500 dark:text-[#8e8d8d]'
-              }`}
+                }`}
             >
               <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] bg-slate-200 dark:bg-[#333333]">
                 1
@@ -698,11 +697,10 @@ export const ImportarMovimientosModal: React.FC<ImportarMovimientosModalProps> =
             </div>
 
             <div
-              className={`py-2.5 px-4 flex items-center justify-center gap-2 border-b-2 transition-colors ${
-                step === 2
+              className={`py-2.5 px-4 flex items-center justify-center gap-2 border-b-2 transition-colors ${step === 2
                   ? 'border-violet-600 text-violet-700 dark:border-[#dab9ff] dark:text-[#dab9ff] bg-violet-50/40 dark:bg-[#dab9ff]/5'
                   : 'border-transparent text-slate-500 dark:text-[#8e8d8d]'
-              }`}
+                }`}
             >
               <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] bg-slate-200 dark:bg-[#333333]">
                 2
@@ -711,11 +709,10 @@ export const ImportarMovimientosModal: React.FC<ImportarMovimientosModalProps> =
             </div>
 
             <div
-              className={`py-2.5 px-4 flex items-center justify-center gap-2 border-b-2 transition-colors ${
-                step === 3
+              className={`py-2.5 px-4 flex items-center justify-center gap-2 border-b-2 transition-colors ${step === 3
                   ? 'border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-400 bg-emerald-50/40 dark:bg-emerald-500/5'
                   : 'border-transparent text-slate-500 dark:text-[#8e8d8d]'
-              }`}
+                }`}
             >
               <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] bg-slate-200 dark:bg-[#333333]">
                 3
@@ -757,8 +754,9 @@ export const ImportarMovimientosModal: React.FC<ImportarMovimientosModalProps> =
                       value={selectedClienteId}
                       onChange={(val) => setSelectedClienteId(val)}
                       placeholder="Seleccionar cliente..."
-                      className="w-full text-xs"
-                    />
+                      className="w-full text-xs" addNewLabel={''} onAddNew={function (): void {
+                        throw new Error('Function not implemented.');
+                      }} />
                     <p className="text-[11px] text-slate-500 dark:text-[#8e8d8d] mt-1">
                       Se aplicará a las filas que no especifiquen la columna CLIENTE.
                     </p>
@@ -776,8 +774,9 @@ export const ImportarMovimientosModal: React.FC<ImportarMovimientosModalProps> =
                       value={selectedAlmacenId}
                       onChange={(val) => setSelectedAlmacenId(val)}
                       placeholder="Seleccionar almacén..."
-                      className="w-full text-xs"
-                    />
+                      className="w-full text-xs" addNewLabel={''} onAddNew={function (): void {
+                        throw new Error('Function not implemented.');
+                      }} />
                     <p className="text-[11px] text-slate-500 dark:text-[#8e8d8d] mt-1">
                       Almacén físico de referencia para las ubicaciones del archivo.
                     </p>
@@ -942,13 +941,12 @@ export const ImportarMovimientosModal: React.FC<ImportarMovimientosModalProps> =
                         return (
                           <tr
                             key={row.index}
-                            className={`hover:bg-slate-50 dark:hover:bg-[#201f1f] transition-colors ${
-                              row.status === 'error'
+                            className={`hover:bg-slate-50 dark:hover:bg-[#201f1f] transition-colors ${row.status === 'error'
                                 ? 'bg-rose-50/40 dark:bg-rose-950/20'
                                 : row.status === 'warning'
-                                ? 'bg-amber-50/40 dark:bg-amber-950/20'
-                                : ''
-                            }`}
+                                  ? 'bg-amber-50/40 dark:bg-amber-950/20'
+                                  : ''
+                              }`}
                           >
                             <td className="py-2 px-3 font-mono text-slate-400 dark:text-[#8e8d8d]">{row.index}</td>
                             <td className="py-2 px-3">
@@ -970,13 +968,12 @@ export const ImportarMovimientosModal: React.FC<ImportarMovimientosModalProps> =
                             </td>
                             <td className="py-2 px-3">
                               <span
-                                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                  esEntrada
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${esEntrada
                                     ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300'
                                     : esSalida
-                                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300'
-                                    : 'bg-violet-100 text-violet-800 dark:bg-[#dab9ff]/20 dark:text-[#dab9ff]'
-                                }`}
+                                      ? 'bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300'
+                                      : 'bg-violet-100 text-violet-800 dark:bg-[#dab9ff]/20 dark:text-[#dab9ff]'
+                                  }`}
                               >
                                 {row.tipoNormalizado}
                               </span>
@@ -1008,21 +1005,19 @@ export const ImportarMovimientosModal: React.FC<ImportarMovimientosModalProps> =
                             <td className="py-2 px-3">
                               <div className="flex items-center gap-1 font-mono text-[11px]">
                                 <span
-                                  className={`px-1.5 py-0.5 rounded ${
-                                    row.ubicacionOrigenCodigoResolved
+                                  className={`px-1.5 py-0.5 rounded ${row.ubicacionOrigenCodigoResolved
                                       ? 'bg-slate-100 dark:bg-[#282727] text-slate-800 dark:text-[#e5e2e1]'
                                       : 'text-slate-400'
-                                  }`}
+                                    }`}
                                 >
                                   {row.ubicacionOrigenCodigoResolved || row.ubicacionOrigen || '(N/A)'}
                                 </span>
                                 <span className="text-slate-400">&rarr;</span>
                                 <span
-                                  className={`px-1.5 py-0.5 rounded ${
-                                    row.ubicacionDestinoCodigoResolved
+                                  className={`px-1.5 py-0.5 rounded ${row.ubicacionDestinoCodigoResolved
                                       ? 'bg-violet-50 text-violet-800 dark:bg-[#dab9ff]/10 dark:text-[#dab9ff]'
                                       : 'text-slate-400'
-                                  }`}
+                                    }`}
                                 >
                                   {row.ubicacionDestinoCodigoResolved || row.ubicacionDestino || '(Auto)'}
                                 </span>

@@ -430,15 +430,21 @@ export async function procesarMovimientoInventario(
   if (!almacenId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(almacenId)) {
     if (almacenId) {
       const { data: alm } = await supabase.from('almacenes').select('id').ilike('codigo', almacenId).maybeSingle();
-      if (alm) almacenId = alm.id;
+      if (alm?.id) almacenId = alm.id;
     }
     if (!almacenId) {
-      almacenId = ubicDest?.almacen_id || ubicOrig?.almacen_id;
+      almacenId = ubicDest?.almacen_id || ubicOrig?.almacen_id || '';
     }
     if (!almacenId) {
       const { data: defaultAlm } = await supabase.from('almacenes').select('id').eq('activo', true).limit(1).maybeSingle();
-      almacenId = defaultAlm?.id;
+      if (defaultAlm?.id) {
+        almacenId = defaultAlm.id;
+      }
     }
+  }
+
+  if (!almacenId) {
+    throw new Error('No se encontró un almacén activo para registrar el movimiento.');
   }
 
   // Procesamiento de Stock según Tipo
