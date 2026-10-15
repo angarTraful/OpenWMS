@@ -2186,6 +2186,18 @@ export type Database = {
         }
         Returns: Json
       }
+      wms_buscar_pedidos_por_cliente: {
+        Args: {
+          p_cod_cliente: string
+        }
+        Returns: Json
+      }
+      buscar_pedidos_por_cliente: {
+        Args: {
+          p_cod_cliente: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       estado_orden_salida_enum:

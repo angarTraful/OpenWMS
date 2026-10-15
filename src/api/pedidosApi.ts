@@ -566,5 +566,200 @@ export const pedidosApi = {
     }
 
     return resultados;
-  }
+  },
+
+  // --- Buscar Pedidos por Cliente en Ejecución (Local y Supa RPC) ---
+  buscarPedidosPorCliente,
 };
+
+/**
+ * Estructura de respuesta de pedidos en ejecución por cliente.
+ */
+export interface PedidoEnEjecucion {
+  NombrePedidoCliente: string;
+  DestinatarioNombre: string;
+  Estado: string;
+  FechaHoraSolicitado: string;
+}
+
+/**
+ * Busca y retorna los pedidos de un cliente que se encuentran en estado de ejecución
+ * (antes de 'despachado' o 'cancelado').
+ *
+ * Si el pedido se encuentra asociado a una Orden de Salida activa, progresa a través
+ * de los estados de la salida: 'remitida', 'cargando', 'en_transito', 'entregado'.
+ * Al cerrarse la salida y completarse el despacho definitivo, pasa a estado final (FIN)
+ * y deja de listarse.
+ *
+ * Soporta invocación tanto vía RPC nativa de Supabase ('wms_buscar_pedidos_por_cliente')
+ * como por agregación/consulta directa local para máxima resiliencia offline.
+ *
+ * @param codCliente Código comercial del cliente (ej: '001', 'CLI01'), UUID o '000' (todos los clientes)
+ * @returns Array JSON ordenado ascendentemente por fecha de solicitud:
+ *          [{ NombrePedidoCliente, DestinatarioNombre, Estado, FechaHoraSolicitado }]
+ */
+export async function buscarPedidosPorCliente(
+  codCliente: string
+): Promise<PedidoEnEjecucion[]> {
+  const cleanCod = (codCliente || '').trim();
+  if (!cleanCod) return [];
+
+  // 1. Invocar RPC nativo de Supabase 'wms_buscar_pedidos_por_cliente'
+  try {
+    const { data: rpcData, error: rpcError } = await (supabase.rpc as any)(
+      'wms_buscar_pedidos_por_cliente',
+      { p_cod_cliente: cleanCod }
+    );
+
+    if (!rpcError && Array.isArray(rpcData)) {
+      return rpcData as PedidoEnEjecucion[];
+    }
+    if (rpcError && !rpcError.message?.includes('schema cache')) {
+      console.warn('RPC wms_buscar_pedidos_por_cliente aviso/fallback:', rpcError.message);
+    }
+  } catch (rpcErr: any) {
+    console.warn('Fallback local en buscarPedidosPorCliente:', rpcErr?.message);
+  }
+
+  // 2. Fallback de agregación y consulta directa sobre tablas de PostgREST
+  try {
+    const esTodos = cleanCod === '000';
+    let clienteId: string | null = null;
+
+    if (!esTodos) {
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanCod)) {
+        clienteId = cleanCod;
+      } else {
+        const { data: cli } = await supabase
+          .from('clientes')
+          .select('id')
+          .or(`codigo.ilike.${cleanCod},codigo.eq.${cleanCod},telefono.eq.${cleanCod},cuit.eq.${cleanCod}`)
+          .maybeSingle();
+
+        if (cli?.id) {
+          clienteId = cli.id;
+        } else {
+          return [];
+        }
+      }
+    }
+
+    // Consultar pedidos que no estén cancelados
+    let pedidosQuery = supabase
+      .from('pedidos')
+      .select(`
+        id,
+        numero_pedido,
+        orden_compra_cliente,
+        fecha_solicitud,
+        estado,
+        cliente_id,
+        destinatario:destinatarios(id, razon_social)
+      `)
+      .neq('estado', 'cancelado')
+      .order('fecha_solicitud', { ascending: true });
+
+    if (!esTodos && clienteId) {
+      pedidosQuery = pedidosQuery.eq('cliente_id', clienteId);
+    }
+
+    const { data: pedidos, error: pedidosErr } = await pedidosQuery;
+    if (pedidosErr) throw pedidosErr;
+    if (!pedidos || pedidos.length === 0) return [];
+
+    const pedidoIds = pedidos.map((p) => p.id);
+
+    // Obtener vínculos con órdenes de salida
+    const { data: vinculos } = await supabase
+      .from('ordenes_salida_pedidos')
+      .select(`
+        pedido_id,
+        orden_salida:ordenes_salida(id, estado, creado_en)
+      `)
+      .in('pedido_id', pedidoIds);
+
+    const salidasMap = new Map<string, { id: string; estado: string; creado_en: string }>();
+    if (vinculos) {
+      for (const v of vinculos as any[]) {
+        if (!v.orden_salida) continue;
+        const actual = salidasMap.get(v.pedido_id);
+        if (!actual || new Date(v.orden_salida.creado_en) > new Date(actual.creado_en)) {
+          salidasMap.set(v.pedido_id, v.orden_salida);
+        }
+      }
+    }
+
+    // Obtener paradas del itinerario para comprobar si fueron entregadas
+    const { data: paradas } = await supabase
+      .from('rutas_paradas_itinerario')
+      .select('pedido_id, estado_entrega')
+      .in('pedido_id', pedidoIds);
+
+    const paradasMap = new Map<string, string>();
+    if (paradas) {
+      for (const p of paradas as any[]) {
+        paradasMap.set(p.pedido_id, p.estado_entrega);
+      }
+    }
+
+    const resultados: PedidoEnEjecucion[] = [];
+
+    for (const p of pedidos as any[]) {
+      const os = salidasMap.get(p.id);
+      const estadoEntrega = paradasMap.get(p.id);
+
+      // Si la salida está cerrada, ya terminó el ciclo (FIN)
+      if (os && os.estado === 'cerrada') {
+        continue;
+      }
+
+      // Si el pedido está marcado como despachado:
+      // Solo continúa si está en una salida activa no cerrada con parada entregada
+      if (p.estado === 'despachado') {
+        const enSalidaActivaConEntrega =
+          os &&
+          os.estado !== 'cerrada' &&
+          (estadoEntrega === 'entregado' || estadoEntrega === 'con_novedad');
+        if (!enSalidaActivaConEntrega) {
+          continue; // FIN
+        }
+      }
+
+      // Determinar Estado operacional en la progresión
+      let estadoFinal: string = p.estado;
+      if (estadoEntrega === 'entregado') {
+        estadoFinal = 'entregado';
+      } else if (estadoEntrega === 'con_novedad') {
+        estadoFinal = 'con_novedad';
+      } else if (os?.estado === 'en_transito') {
+        estadoFinal = 'en_transito';
+      } else if (os?.estado === 'cargando') {
+        estadoFinal = 'cargando';
+      } else if (os?.estado === 'remitida') {
+        estadoFinal = 'remitida';
+      } else if (os?.id || p.estado === 'agrupado_salida') {
+        estadoFinal = 'agrupado_salida';
+      }
+
+      const destNombre = p.destinatario?.razon_social || 'Sin destinatario';
+      const nomPedido = p.numero_pedido || p.orden_compra_cliente || '';
+
+      resultados.push({
+        NombrePedidoCliente: nomPedido,
+        DestinatarioNombre: destNombre,
+        Estado: estadoFinal,
+        FechaHoraSolicitado: p.fecha_solicitud,
+      });
+    }
+
+    // Ordenar ascendentemente por fechaSolicitud
+    resultados.sort(
+      (a, b) => new Date(a.FechaHoraSolicitado).getTime() - new Date(b.FechaHoraSolicitado).getTime()
+    );
+
+    return resultados;
+  } catch (localErr) {
+    console.error('Error en fallback local de buscarPedidosPorCliente:', localErr);
+    throw localErr;
+  }
+}

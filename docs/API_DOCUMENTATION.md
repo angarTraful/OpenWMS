@@ -170,10 +170,12 @@ import {
 * `obtenerPalletPorCodigo(codigoLpn)`: Consulta todo el contenido de un pallet específico (bultos, artículos, M3 y ubicación actual).
 * `consultarKardex(clienteId, articuloId)`: Trazabilidad inmutable de movimientos físicos.
 
-### E. Pedidos y Picking (`pedidosApi`)
-* `crearPedido(pedido, detalles)`: Registra pedido para un destinatario del cliente.
 ### E. Pedidos y Preparación Outbound (`pedidosApi`)
 * `crearPedido(pedido, detalles)`: Registra el pedido con cliente, destinatario, prioridad y renglones solicitados.
+* `buscarPedidosPorCliente(codCliente)`: **Devuelve los pedidos en ejecución de un cliente en JSON** ordenados ascendentemente por fecha de solicitud (`{ NombrePedidoCliente, DestinatarioNombre, Estado, FechaHoraSolicitado }`).
+  * Filtra pedidos en ejecución antes de `despachado` o `cancelado`.
+  * Si el pedido ingresó en una Orden de Salida activa, progresa dinámicamente con los estados operativos (`agrupado_salida` -> `remitida` -> `cargando` -> `en_transito` -> `entregado`) antes de que la salida se cierre (`cerrada`) y el pedido quede despachado definitivo (FIN).
+  * Invoca prioritariamente la RPC de Supabase `wms_buscar_pedidos_por_cliente` con fallback de agregación local resiliente. Admite código comercial (`'001'`), UUID o `'000'` (todos los clientes).
 * `asignarPickingFEFO(pedidoId)`: **Ejecuta la alocación inteligente FEFO/FIFO**:
   * Prioriza fechas de vencimiento más próximas (FEFO) para artículos perecederos.
   * Prioriza antigüedad de ingreso (FIFO) y pallets completos antes que fraccionados.
@@ -231,6 +233,11 @@ async function ejemploFlujo() {
     // Se puede pasar directamente el objeto 'usuario' (o 'usuario.clientes_ids')
     const clientesAsignados = await clientesApi.obtenerClientesPorId(usuario);
     console.log(`Usuario autenticado: ${usuario.nombre_usuario}. Clientes autorizados:`, clientesAsignados);
+
+    // 0.1 Consultar pedidos en ejecución del cliente (ordenados asc por fechaSolicitud)
+    const pedidosEnCurso = await pedidosApi.buscarPedidosPorCliente(clientesAsignados[0]?.codigo || '001');
+    console.log('Pedidos en ejecución del cliente:', pedidosEnCurso);
+    // Retorna: [{ NombrePedidoCliente, DestinatarioNombre, Estado, FechaHoraSolicitado }]
   }
 
   // 1. Confirmar un ingreso de mercadería en rack con pallet LPN
