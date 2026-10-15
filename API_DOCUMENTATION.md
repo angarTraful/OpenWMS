@@ -172,7 +172,7 @@ import {
 
 ### E. Pedidos y Preparación Outbound (`pedidosApi`)
 * `crearPedido(pedido, detalles)`: Registra el pedido con cliente, destinatario, prioridad y renglones solicitados.
-* `buscarPedidosPorCliente(codCliente)`: **Devuelve los pedidos en ejecución de un cliente en JSON** ordenados ascendentemente por fecha de solicitud (`{ NombrePedidoCliente, DestinatarioNombre, Estado, FechaHoraSolicitado }`).
+* `buscarPedidosPorCliente(codCliente)`: **Devuelve los pedidos en ejecución de un cliente en JSON** ordenados ascendentemente por fecha de compromiso (`{ NombrePedidoCliente, DestinatarioNombre, Estado, FechaCompromiso }`).
   * Filtra pedidos en ejecución antes de `despachado` o `cancelado`.
   * Si el pedido ingresó en una Orden de Salida activa, progresa dinámicamente con los estados operativos (`agrupado_salida` -> `remitida` -> `cargando` -> `en_transito` -> `entregado`) antes de que la salida se cierre (`cerrada`) y el pedido quede despachado definitivo (FIN).
   * Invoca prioritariamente la RPC de Supabase `wms_buscar_pedidos_por_cliente` con fallback de agregación local resiliente. Admite código comercial (`'001'`), UUID o `'000'` (todos los clientes).

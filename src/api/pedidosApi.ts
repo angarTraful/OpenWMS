@@ -579,7 +579,9 @@ export interface PedidoEnEjecucion {
   NombrePedidoCliente: string;
   DestinatarioNombre: string;
   Estado: string;
-  FechaHoraSolicitado: string;
+  FechaCompromiso: string;
+  FechaHoraCompromiso?: string;
+  FechaHoraSolicitado?: string;
 }
 
 /**
@@ -595,8 +597,8 @@ export interface PedidoEnEjecucion {
  * como por agregación/consulta directa local para máxima resiliencia offline.
  *
  * @param codCliente Código comercial del cliente (ej: '001', 'CLI01'), UUID o '000' (todos los clientes)
- * @returns Array JSON ordenado ascendentemente por fecha de solicitud:
- *          [{ NombrePedidoCliente, DestinatarioNombre, Estado, FechaHoraSolicitado }]
+ * @returns Array JSON ordenado ascendentemente por fecha compromiso:
+ *          [{ NombrePedidoCliente, DestinatarioNombre, Estado, FechaCompromiso }]
  */
 export async function buscarPedidosPorCliente(
   codCliente: string
@@ -651,13 +653,14 @@ export async function buscarPedidosPorCliente(
         id,
         numero_pedido,
         orden_compra_cliente,
+        fecha_compromiso_entrega,
         fecha_solicitud,
         estado,
         cliente_id,
         destinatario:destinatarios(id, razon_social)
       `)
       .neq('estado', 'cancelado')
-      .order('fecha_solicitud', { ascending: true });
+      .order('fecha_compromiso_entrega', { ascending: true });
 
     if (!esTodos && clienteId) {
       pedidosQuery = pedidosQuery.eq('cliente_id', clienteId);
@@ -743,18 +746,23 @@ export async function buscarPedidosPorCliente(
 
       const destNombre = p.destinatario?.razon_social || 'Sin destinatario';
       const nomPedido = p.numero_pedido || p.orden_compra_cliente || '';
+      const fechaComp = p.fecha_compromiso_entrega || p.fecha_solicitud || '';
 
       resultados.push({
         NombrePedidoCliente: nomPedido,
         DestinatarioNombre: destNombre,
         Estado: estadoFinal,
+        FechaCompromiso: fechaComp,
+        FechaHoraCompromiso: fechaComp,
         FechaHoraSolicitado: p.fecha_solicitud,
       });
     }
 
-    // Ordenar ascendentemente por fechaSolicitud
+    // Ordenar ascendentemente por fecha compromiso (o fecha solicitud como respaldo)
     resultados.sort(
-      (a, b) => new Date(a.FechaHoraSolicitado).getTime() - new Date(b.FechaHoraSolicitado).getTime()
+      (a, b) =>
+        new Date(a.FechaCompromiso || a.FechaHoraSolicitado || 0).getTime() -
+        new Date(b.FechaCompromiso || b.FechaHoraSolicitado || 0).getTime()
     );
 
     return resultados;

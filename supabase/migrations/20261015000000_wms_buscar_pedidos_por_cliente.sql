@@ -4,6 +4,9 @@
 -- ==============================================================================
 
 -- 1. ÍNDICES DE RENDIMIENTO PARA OUTBOUND Y RUTEO
+CREATE INDEX IF NOT EXISTS idx_pedidos_cliente_fecha_compromiso
+  ON public.pedidos(cliente_id, fecha_compromiso_entrega ASC);
+
 CREATE INDEX IF NOT EXISTS idx_pedidos_cliente_fecha_solicitud
   ON public.pedidos(cliente_id, fecha_solicitud ASC);
 
@@ -23,12 +26,14 @@ CREATE INDEX IF NOT EXISTS idx_rutas_paradas_pedido_entrega
 -- Entrada:
 --   p_cod_cliente: Código comercial del cliente (ej. '001', 'CLI01'), UUID o '000' (todos los clientes).
 -- Retorno:
---   Array JSON ordenado asc por fecha_solicitud:
+--   Array JSON ordenado asc por fecha_compromiso (con fallback a fecha_solicitud):
 --   [
 --     {
 --       "NombrePedidoCliente": "PED-2026-0001",
 --       "DestinatarioNombre": "Farmacia Central",
 --       "Estado": "en_picking",
+--       "FechaCompromiso": "2026-10-16T18:00:00+00:00",
+--       "FechaHoraCompromiso": "2026-10-16T18:00:00+00:00",
 --       "FechaHoraSolicitado": "2026-10-15T02:00:00+00:00"
 --     }
 --   ]
@@ -88,6 +93,7 @@ BEGIN
       p.id AS pedido_id,
       COALESCE(p.numero_pedido, p.orden_compra_cliente, '') AS nombre_pedido,
       COALESCE(d.razon_social, 'Sin destinatario') AS destinatario_nombre,
+      p.fecha_compromiso_entrega,
       p.fecha_solicitud,
       p.estado AS pedido_estado,
       os.id AS orden_salida_id,
@@ -143,9 +149,11 @@ BEGIN
               WHEN pa.orden_salida_id IS NOT NULL OR pa.pedido_estado = 'agrupado_salida' THEN 'agrupado_salida'
               ELSE pa.pedido_estado::TEXT
             END,
+          'FechaCompromiso', COALESCE(pa.fecha_compromiso_entrega, pa.fecha_solicitud),
+          'FechaHoraCompromiso', COALESCE(pa.fecha_compromiso_entrega, pa.fecha_solicitud),
           'FechaHoraSolicitado', pa.fecha_solicitud
         )
-        ORDER BY pa.fecha_solicitud ASC
+        ORDER BY COALESCE(pa.fecha_compromiso_entrega, pa.fecha_solicitud) ASC
       ),
       '[]'::JSONB
     )
