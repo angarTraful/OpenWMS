@@ -87,9 +87,9 @@ export const RomaneoEditorModal: React.FC<RomaneoEditorModalProps> = ({
 
       // Si no hay detalles específicos, cargar artículos del catálogo
       try {
-        const arts = await articulosApi.listarArticulos();
+        const arts = await articulosApi.listarTodos({ soloActivos: true });
         if (arts && arts.length > 0) {
-          setItemsDisponibles(arts.map((a) => ({ articulo_id: a.id, articulo: a })));
+          setItemsDisponibles(arts.map((a: any) => ({ articulo_id: a.id, articulo: a })));
         }
       } catch (e) {
         console.error('Error cargando catálogo:', e);

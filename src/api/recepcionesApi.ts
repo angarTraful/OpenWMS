@@ -3,6 +3,7 @@ import type { Database } from '../../types/database.types';
 
 export type OrdenRecepcion = Database['public']['Tables']['ordenes_recepcion']['Row'];
 export type OrdenRecepcionInsert = Database['public']['Tables']['ordenes_recepcion']['Insert'];
+export type OrdenRecepcionUpdate = Database['public']['Tables']['ordenes_recepcion']['Update'];
 export type TareaPutaway = Database['public']['Tables']['tareas_putaway_control']['Row'];
 
 export const recepcionesApi = {
@@ -112,7 +113,7 @@ export const recepcionesApi = {
     muelle?: string;
     observaciones?: string;
   }) {
-    const updatePayload: Record<string, any> = {
+    const updatePayload: OrdenRecepcionUpdate = {
       estado: 'en_control',
       actualizado_en: new Date().toISOString(),
     };

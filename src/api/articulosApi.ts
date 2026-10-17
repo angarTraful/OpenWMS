@@ -101,6 +101,10 @@ export const articulosApi = {
     return data;
   },
 
+  async listarArticulos(params?: { clienteId?: string; soloActivos?: boolean }) {
+    return this.listarTodos(params ?? { soloActivos: true });
+  },
+
   async crearArticulo(articulo: ArticuloInsert) {
     try {
       const { data, error } = await supabase.from('articulos').insert(articulo).select().single();
