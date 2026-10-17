@@ -120,10 +120,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <div className="flex items-center gap-1.5">
                 <span className="font-extrabold tracking-tight text-base text-slate-900 dark:text-[#e5e2e1] group-hover:text-violet-600 dark:group-hover:text-[#dab9ff] transition-colors">
-                  Open Cargo WMS
+                  SIGMA WMS
                 </span>
                 <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-violet-50 dark:bg-[#241138] text-violet-700 dark:text-[#dab9ff] border border-violet-200 dark:border-[#5a2e8c]">
-                  by SIGMA
+                  Open Cargo
                 </span>
               </div>
               <p className="text-[10px] text-slate-500 dark:text-[#978d9d] font-normal leading-tight mt-0.5 truncate">

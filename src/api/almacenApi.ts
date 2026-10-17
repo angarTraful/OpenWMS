@@ -79,6 +79,33 @@ export const almacenApi = {
     return data;
   },
 
+  async alternarEstadoZona(id: string, activoActual: boolean) {
+    const { data, error } = await supabase
+      .from('zonas')
+      .update({ activo: !activoActual })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async eliminarZona(id: string) {
+    // Verificar si la zona tiene ubicaciones asociadas antes de eliminar
+    const { count, error: countErr } = await supabase
+      .from('ubicaciones')
+      .select('*', { count: 'exact', head: true })
+      .eq('zona_id', id);
+
+    if (countErr) throw countErr;
+    if (count && count > 0) {
+      throw new Error(`No se puede eliminar la zona porque tiene ${count} ubicación(es) asociada(s). Bloquee la zona o reasigne sus ubicaciones primero.`);
+    }
+
+    const { error } = await supabase.from('zonas').delete().eq('id', id);
+    if (error) throw error;
+  },
+
 
   async crearUbicacion(ubicacion: {
     almacen_id: string;

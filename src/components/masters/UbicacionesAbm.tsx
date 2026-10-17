@@ -17,9 +17,11 @@ import {
   Filter,
   FilterX,
 } from 'lucide-react';
-import { almacenApi, type Almacen, type Ubicacion } from '../../api/almacenApi';
+import { almacenApi, type Almacen, type Ubicacion, type Zona } from '../../api/almacenApi';
 import { UbicacionModal } from './UbicacionModal';
 import { GeneradorUbicacionesModal } from './GeneradorUbicacionesModal';
+import { ZonaModal } from './ZonaModal';
+import { GestionZonasModal } from './GestionZonasModal';
 import { formatM3 } from '../../lib/utils';
 import {
   SortableHeaderCell,
@@ -43,8 +45,17 @@ export const UbicacionesAbm: React.FC<UbicacionesAbmProps> = ({
   const [almacenId, setAlmacenId] = useState<string>(
     initialAlmacenId || (almacenes[0]?.id ?? '')
   );
-  const [zonas, setZonas] = useState<any[]>([]);
+  const [zonas, setZonas] = useState<Zona[]>([]);
   const [zonaFilter, setZonaFilter] = useState<string>('');
+
+  // Sync warehouse selection if almacenes load asynchronously
+  useEffect(() => {
+    if (initialAlmacenId) {
+      setAlmacenId(initialAlmacenId);
+    } else if (almacenes.length > 0 && !almacenId) {
+      setAlmacenId(almacenes[0].id);
+    }
+  }, [initialAlmacenId, almacenes]);
 
   const [ubicaciones, setUbicaciones] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,6 +83,9 @@ export const UbicacionesAbm: React.FC<UbicacionesAbmProps> = ({
   // Modals
   const [modalOpen, setModalOpen] = useState(false);
   const [generadorModalOpen, setGeneradorModalOpen] = useState(false);
+  const [zonaModalOpen, setZonaModalOpen] = useState(false);
+  const [gestionZonasModalOpen, setGestionZonasModalOpen] = useState(false);
+  const [zonaSeleccionada, setZonaSeleccionada] = useState<Zona | null>(null);
   const [ubicacionSeleccionada, setUbicacionSeleccionada] = useState<Ubicacion | null>(null);
 
   // Feedback notification
@@ -110,13 +124,27 @@ export const UbicacionesAbm: React.FC<UbicacionesAbmProps> = ({
     setCurrentPage(1);
   };
 
+  const cargarZonas = async (currentAlmId?: string) => {
+    const id = currentAlmId || almacenId;
+    if (!id) {
+      setZonas([]);
+      return;
+    }
+    try {
+      const z = await almacenApi.listarZonas(id);
+      setZonas(z || []);
+    } catch (err) {
+      console.error('Error cargando zonas:', err);
+    }
+  };
+
   // Cargar zonas del almacén seleccionado
   useEffect(() => {
     if (almacenId) {
-      almacenApi
-        .listarZonas(almacenId)
-        .then((z) => setZonas(z || []))
-        .catch((err) => console.error('Error cargando zonas:', err));
+      cargarZonas(almacenId);
+      setZonaFilter('');
+    } else {
+      setZonas([]);
     }
   }, [almacenId]);
 
@@ -377,7 +405,7 @@ export const UbicacionesAbm: React.FC<UbicacionesAbmProps> = ({
               onChange={(e) => setZonaFilter(e.target.value)}
               className="w-full px-2.5 py-1.5 rounded bg-[#131313] border border-[#333333] text-xs text-[#e5e2e1] focus:border-[#dab9ff] outline-none cursor-pointer"
             >
-              <option value="">Todas las Zonas</option>
+              <option value="">Todas las Zonas ({zonas.length})</option>
               {zonas.map((z) => (
                 <option key={z.id} value={z.id}>
                   {z.nombre}
@@ -385,6 +413,35 @@ export const UbicacionesAbm: React.FC<UbicacionesAbmProps> = ({
               ))}
             </select>
           </div>
+
+          {/* Botón Gestión de Zonas */}
+          <button
+            type="button"
+            onClick={() => setGestionZonasModalOpen(true)}
+            title="Ver y administrar zonas de este depósito"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-[#201f1f] border border-[#333333] hover:border-[#dab9ff] text-xs text-[#cdc3d4] hover:text-[#e5e2e1] transition-colors"
+          >
+            <Layers className="w-3.5 h-3.5 text-[#dab9ff]" />
+            <span className="hidden sm:inline">Zonas</span>
+            <span className="px-1.5 py-0.2 rounded-full bg-[#dab9ff]/20 text-[#dab9ff] text-[10px] font-bold">
+              {zonas.length}
+            </span>
+          </button>
+
+          {/* Warning badge if 0 zones */}
+          {zonas.length === 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                setZonaSeleccionada(null);
+                setZonaModalOpen(true);
+              }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded bg-[#38260a] border border-[#7a4c10] text-[#ffd27a] text-xs font-semibold hover:bg-[#4f360e] transition-colors animate-pulse"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Crear Zona</span>
+            </button>
+          )}
 
           {/* Search box */}
           <div className="relative flex-1 min-w-[180px] max-w-sm">
@@ -450,11 +507,25 @@ export const UbicacionesAbm: React.FC<UbicacionesAbmProps> = ({
 
         <div className="flex items-center gap-2">
           <button
-            onClick={cargarUbicaciones}
+            onClick={() => {
+              cargarUbicaciones();
+              cargarZonas();
+            }}
             title="Recargar lista"
             className="p-1.5 rounded border border-[#333333] bg-[#201f1f] hover:bg-[#2a2a2a] text-[#cdc3d4] hover:text-[#e5e2e1] transition-colors"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#dab9ff]' : ''}`} />
+          </button>
+
+          <button
+            onClick={() => {
+              setZonaSeleccionada(null);
+              setZonaModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold border border-[#522b7c] bg-[#201330] hover:bg-[#321d4d] text-[#dab9ff] transition-colors shadow-sm"
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>+ Nueva Zona</span>
           </button>
 
           <button
@@ -474,6 +545,33 @@ export const UbicacionesAbm: React.FC<UbicacionesAbmProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Banner de aviso si el depósito no tiene zonas configuradas */}
+      {zonas.length === 0 && !loading && (
+        <div className="p-3.5 rounded-md bg-[#251b14] border border-[#7a4c10] flex flex-col sm:flex-row items-center justify-between gap-3 text-xs animate-fadeIn">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded bg-[#38260a] border border-[#7a4c10] text-[#ffd27a] shrink-0">
+              <Layers className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="font-bold text-[#ffd27a] text-sm">Este depósito no tiene zonas operativas configuradas</h4>
+              <p className="text-[#e5d5be] text-xs mt-0.5">
+                Para poder registrar racks y ubicaciones en este depósito, primero debes dar de alta al menos una zona (ej: Racks Convencionales, Picking, Recepción).
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setZonaSeleccionada(null);
+              setZonaModalOpen(true);
+            }}
+            className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded bg-[#ffd27a] hover:bg-[#ffe09e] text-[#460283] font-bold text-xs shadow-md transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Crear Primera Zona</span>
+          </button>
+        </div>
+      )}
 
       {/* Ubicaciones Table */}
       <div className="bg-[#1c1b1b] border border-[#333333] rounded-md overflow-hidden">
@@ -748,6 +846,41 @@ export const UbicacionesAbm: React.FC<UbicacionesAbmProps> = ({
             type: 'ok',
             msg: 'Lote de posiciones generado e insertado exitosamente en el almacén.',
           });
+        }}
+      />
+
+      {/* Modal Creación / Edición de Zona */}
+      <ZonaModal
+        isOpen={zonaModalOpen}
+        onClose={() => {
+          setZonaModalOpen(false);
+          setZonaSeleccionada(null);
+        }}
+        zona={zonaSeleccionada}
+        almacenes={almacenes}
+        defaultAlmacenId={almacenId}
+        onSuccess={() => {
+          cargarZonas(almacenId);
+        }}
+        onCreated={(nuevaZona) => {
+          cargarZonas(almacenId);
+          setZonaFilter(nuevaZona.id);
+          setFeedback({
+            type: 'ok',
+            msg: `Zona "${nuevaZona.codigo} - ${nuevaZona.nombre}" creada y seleccionada exitosamente.`,
+          });
+        }}
+      />
+
+      {/* Modal de Gestión Integral de Zonas */}
+      <GestionZonasModal
+        isOpen={gestionZonasModalOpen}
+        onClose={() => setGestionZonasModalOpen(false)}
+        almacenes={almacenes}
+        selectedAlmacenId={almacenId}
+        onZonasUpdated={() => {
+          cargarZonas(almacenId);
+          cargarUbicaciones();
         }}
       />
     </div>

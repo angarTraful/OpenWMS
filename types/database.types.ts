@@ -1887,6 +1887,7 @@ export type Database = {
           activo: boolean
           almacen_id: string
           codigo: string
+          es_autoestiba_piso?: boolean
           id: string
           nombre: string
           tipo_zona: string
@@ -1895,6 +1896,7 @@ export type Database = {
           activo?: boolean
           almacen_id: string
           codigo: string
+          es_autoestiba_piso?: boolean
           id?: string
           nombre: string
           tipo_zona?: string
@@ -1903,6 +1905,7 @@ export type Database = {
           activo?: boolean
           almacen_id?: string
           codigo?: string
+          es_autoestiba_piso?: boolean
           id?: string
           nombre?: string
           tipo_zona?: string
