@@ -449,7 +449,7 @@ export async function procesarMovimientoInventario(
 
   // Procesamiento de Stock según Tipo
   const esEntrada = ['recepcion', 'ajuste_positivo'].includes(tipoNorm);
-  const esSalida = ['despacho', 'ajuste_negativo', 'merma'].includes(tipoNorm);
+  const esSalida = ['despacho', 'ajuste_negativo', 'merma', 'picking'].includes(tipoNorm);
 
   if (esEntrada) {
     if (!ubicDest) {

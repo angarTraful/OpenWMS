@@ -294,23 +294,28 @@ export const KardexView: React.FC<KardexViewProps> = ({
     let totalEntradas = 0;
     let totalSalidas = 0;
     let totalInternos = 0;
-    let totalVolumenM3 = 0;
+    let totalVolumenEntradas = 0;
+    let totalVolumenSalidas = 0;
+    let totalVolumenInternos = 0;
 
     filtered.forEach((m) => {
       const cant = Number(m.cantidad || 0);
       const vol = Number(m.volumen_m3 || m.volumen_total_m3 || 0);
-      totalVolumenM3 += vol;
 
       if (esMovimientoEntrada(m.tipo_movimiento)) {
         totalEntradas += cant;
+        totalVolumenEntradas += vol;
       } else if (esMovimientoSalida(m.tipo_movimiento)) {
         totalSalidas += cant;
+        totalVolumenSalidas += vol;
       } else {
         totalInternos += cant;
+        totalVolumenInternos += vol;
       }
     });
 
     const netoCantidad = totalEntradas - totalSalidas; // Stock Físico (Neto en Almacén)
+    const netoVolumenM3 = Math.max(0, Math.round((totalVolumenEntradas - totalVolumenSalidas) * 10000) / 10000); // Volumen Físico Neto (Neto en Almacén)
     const stockFuturo = Math.max(0, netoCantidad - totalReservados); // Stock Futuro = Entradas - Salidas - Reservados
 
     // Cantidad de Pallets presentes en inventario
@@ -328,9 +333,13 @@ export const KardexView: React.FC<KardexViewProps> = ({
       totalEntradas,
       totalSalidas,
       totalInternos,
+      totalVolumenEntradas,
+      totalVolumenSalidas,
+      totalVolumenInternos,
+      totalVolumenM3: netoVolumenM3,
+      netoVolumenM3,
       totalReservados,
       stockFuturo,
-      totalVolumenM3,
       totalPallets,
     };
   }, [filtered, totalReservados, inventario, selectedArticuloId]);
@@ -819,14 +828,25 @@ export const KardexView: React.FC<KardexViewProps> = ({
               </span>
             </div>
 
-            {/* SECUNDARIOS: Entradas / Salidas */}
-            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white dark:bg-[#121111] border border-slate-200 dark:border-[#333333] text-[11px]">
+            {/* SECUNDARIOS: Entradas / Salidas Cantidad */}
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white dark:bg-[#121111] border border-slate-200 dark:border-[#333333] text-[11px]" title="Entradas y Salidas de Cantidad">
               <span className="text-emerald-700 dark:text-[#75d1ff] font-semibold flex items-center gap-0.5">
                 <ArrowDownLeft className="w-2.5 h-2.5" />+{formatNumber(kardexTotals.totalEntradas, 0)}
               </span>
               <span className="text-slate-300 dark:text-[#333333]">|</span>
               <span className="text-rose-700 dark:text-[#ffb4ab] font-semibold flex items-center gap-0.5">
                 <ArrowUpRight className="w-2.5 h-2.5" />-{formatNumber(kardexTotals.totalSalidas, 0)}
+              </span>
+            </div>
+
+            {/* SECUNDARIOS: Entradas / Salidas Volumen M3 */}
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white dark:bg-[#121111] border border-slate-200 dark:border-[#333333] text-[11px]" title="Entradas y Salidas de Volumen M3">
+              <span className="text-emerald-700 dark:text-[#75d1ff] font-semibold flex items-center gap-0.5">
+                <ArrowDownLeft className="w-2.5 h-2.5" />+{formatM3(kardexTotals.totalVolumenEntradas)}
+              </span>
+              <span className="text-slate-300 dark:text-[#333333]">|</span>
+              <span className="text-rose-700 dark:text-[#ffb4ab] font-semibold flex items-center gap-0.5">
+                <ArrowUpRight className="w-2.5 h-2.5" />-{formatM3(kardexTotals.totalVolumenSalidas)}
               </span>
             </div>
           </div>
@@ -1041,8 +1061,34 @@ export const KardexView: React.FC<KardexViewProps> = ({
                             )}
                           </span>
                         </td>
-                        <td className="py-2 px-3 text-right font-mono font-bold text-xs text-violet-700 dark:text-[#dab9ff] tabular-nums">
-                          {formatM3(m.volumen_m3 || 0)}
+                        <td className="py-2 px-3 text-right font-mono font-bold text-xs tabular-nums">
+                          <span
+                            className={cn(
+                              'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px]',
+                              esEntrada
+                                ? 'text-emerald-700 dark:text-[#75d1ff] bg-emerald-50 dark:bg-[#0f241a] border border-emerald-200 dark:border-[#1d4d38]'
+                                : esSalida
+                                ? 'text-rose-700 dark:text-[#ffb4ab] bg-rose-50 dark:bg-[#2a0e12] border border-rose-200 dark:border-[#690005]'
+                                : 'text-slate-600 dark:text-[#cdc3d4] bg-slate-100 dark:bg-[#252424] border border-slate-200 dark:border-[#333333]'
+                            )}
+                          >
+                            {esEntrada ? (
+                              <>
+                                <ArrowDownLeft className="w-2.5 h-2.5 text-emerald-600 dark:text-[#75d1ff]" />
+                                <span>+{formatM3(m.volumen_m3 || 0)}</span>
+                              </>
+                            ) : esSalida ? (
+                              <>
+                                <ArrowUpRight className="w-2.5 h-2.5 text-rose-600 dark:text-[#ffb4ab]" />
+                                <span>-{formatM3(m.volumen_m3 || 0)}</span>
+                              </>
+                            ) : (
+                              <>
+                                <ArrowRightLeft className="w-2.5 h-2.5 text-slate-400" />
+                                <span>{formatM3(m.volumen_m3 || 0)}</span>
+                              </>
+                            )}
+                          </span>
                         </td>
                       </AnimatedTableRow>
                     );
@@ -1066,8 +1112,8 @@ export const KardexView: React.FC<KardexViewProps> = ({
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-50 dark:bg-sky-950/40 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800/40 font-bold">
                           Stock Físico: {formatNumber(kardexTotals.netoCantidad, 0)} un.
                         </span>
-                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-50 dark:bg-violet-950/40 text-violet-800 dark:text-[#dab9ff] border border-violet-200 dark:border-[#dab9ff]/40 font-bold">
-                          Volumen: {formatM3(kardexTotals.totalVolumenM3)}
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-50 dark:bg-violet-950/40 text-violet-800 dark:text-[#dab9ff] border border-violet-200 dark:border-[#dab9ff]/40 font-bold" title={`Entradas: +${formatM3(kardexTotals.totalVolumenEntradas)} | Salidas: -${formatM3(kardexTotals.totalVolumenSalidas)}`}>
+                          Volumen Neto: {formatM3(kardexTotals.totalVolumenM3)}
                         </span>
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-50 dark:bg-[#201f1f] text-slate-700 dark:text-[#cdc3d4] border border-slate-200 dark:border-[#333333]">
                           Pallets: {kardexTotals.totalPallets}
@@ -1090,7 +1136,7 @@ export const KardexView: React.FC<KardexViewProps> = ({
                     </div>
                   </td>
                   <td className="py-3 px-3 text-right font-mono font-bold text-xs">
-                    <div className="text-[10px] text-slate-500 dark:text-[#978d9d] font-normal uppercase">Volumen Total</div>
+                    <div className="text-[10px] text-slate-500 dark:text-[#978d9d] font-normal uppercase">Volumen Neto</div>
                     <span className="text-sm font-extrabold text-violet-700 dark:text-[#dab9ff] tabular-nums">
                       {formatM3(kardexTotals.totalVolumenM3)}
                     </span>

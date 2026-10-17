@@ -349,6 +349,11 @@ export const pedidosApi = {
         const cant = Number(t.cantidad_recolectada || t.cantidad_a_recolectar || 0);
         if (cant <= 0) continue;
 
+        // Buscar volumen unitario del artículo
+        const detItem = (ped.detalles || []).find((d: any) => d.articulo_id === t.articulo_id);
+        const volUnit = Number(detItem?.articulo?.volumen_unitario_m3 || 0);
+        const volTotal = Math.round(cant * volUnit * 10000) / 10000;
+
         // Descontar inventario reservado
         const { data: invRow } = await supabase
           .from('inventario')
@@ -361,6 +366,7 @@ export const pedidosApi = {
         if (invRow) {
           const nuevaRes = Math.max(0, Number(invRow.cantidad_reservada || 0) - cant);
           const nuevoDisp = Number(invRow.cantidad_disponible || 0);
+          const nuevoVol = Math.max(0, Math.round((Number(invRow.volumen_m3 || 0) - volTotal) * 10000) / 10000);
           if (nuevaRes <= 0.001 && nuevoDisp <= 0.001) {
             await supabase.from('inventario').delete().eq('id', invRow.id);
           } else {
@@ -368,6 +374,7 @@ export const pedidosApi = {
               .from('inventario')
               .update({
                 cantidad_reservada: nuevaRes,
+                volumen_m3: nuevoVol,
                 actualizado_en: new Date().toISOString(),
               })
               .eq('id', invRow.id);
@@ -385,7 +392,7 @@ export const pedidosApi = {
             ubicacion_destino_id: null,
             tipo_movimiento: 'despacho',
             cantidad: cant,
-            volumen_m3: 0,
+            volumen_m3: volTotal,
             documento_referencia: `DESPACHO-${ped.numero_pedido}`,
             notas: `Salida de almacén por despacho de pedido ${ped.numero_pedido}`,
           });
@@ -401,7 +408,7 @@ export const pedidosApi = {
               ubicacion_destino_id: null,
               tipo_movimiento: 'picking',
               cantidad: cant,
-              volumen_m3: 0,
+              volumen_m3: volTotal,
               documento_referencia: `DESPACHO-${ped.numero_pedido}`,
               notas: `Salida de almacén por despacho de pedido ${ped.numero_pedido}`,
             });
@@ -418,9 +425,12 @@ export const pedidosApi = {
         const cant = Number(d.cantidad_separada || d.cantidad_reservada || d.cantidad_solicitada || 0);
         if (cant <= 0) continue;
 
+        const volUnit = Number(d.articulo?.volumen_unitario_m3 || 0);
+        const volTotal = Math.round(cant * volUnit * 10000) / 10000;
+
         const { data: invRows } = await supabase
           .from('inventario')
-          .select('id, cantidad_reservada, cantidad_disponible')
+          .select('id, cantidad_reservada, cantidad_disponible, volumen_m3')
           .eq('cliente_id', ped.cliente_id)
           .eq('articulo_id', d.articulo_id)
           .order('cantidad_reservada', { ascending: false })
@@ -430,6 +440,7 @@ export const pedidosApi = {
           const invRow = invRows[0];
           const nuevaRes = Math.max(0, Number(invRow.cantidad_reservada || 0) - cant);
           const nuevoDisp = Number(invRow.cantidad_disponible || 0);
+          const nuevoVol = Math.max(0, Math.round((Number(invRow.volumen_m3 || 0) - volTotal) * 10000) / 10000);
           if (nuevaRes <= 0.001 && nuevoDisp <= 0.001) {
             await supabase.from('inventario').delete().eq('id', invRow.id);
           } else {
@@ -437,9 +448,25 @@ export const pedidosApi = {
               .from('inventario')
               .update({
                 cantidad_reservada: nuevaRes,
+                volumen_m3: nuevoVol,
                 actualizado_en: new Date().toISOString(),
               })
               .eq('id', invRow.id);
+          }
+
+          // Asiento Kardex en fallback directo
+          try {
+            await (supabase.from('movimientos_inventario') as any).insert({
+              cliente_id: ped.cliente_id,
+              articulo_id: d.articulo_id,
+              tipo_movimiento: 'despacho',
+              cantidad: cant,
+              volumen_m3: volTotal,
+              documento_referencia: `DESPACHO-${ped.numero_pedido}`,
+              notas: `Salida de almacén por despacho directo de pedido ${ped.numero_pedido}`,
+            });
+          } catch {
+            // Silencioso si falla
           }
         }
 

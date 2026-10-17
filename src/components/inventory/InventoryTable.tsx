@@ -405,12 +405,12 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
   const quickKardexTotals = useMemo(() => {
     let totalEntradas = 0;
     let totalSalidas = 0;
-    let totalVolumenM3 = 0;
+    let totalVolumenEntradas = 0;
+    let totalVolumenSalidas = 0;
 
     quickKardexMovimientos.forEach((m) => {
       const cant = Number(m.cantidad || 0);
       const vol = Number(m.volumen_m3 || 0);
-      totalVolumenM3 += vol;
 
       const esEntrada =
         m.tipo_movimiento === 'recepcion' ||
@@ -426,19 +426,25 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
 
       if (esEntrada) {
         totalEntradas += cant;
+        totalVolumenEntradas += vol;
       } else if (esSalida) {
         totalSalidas += cant;
+        totalVolumenSalidas += vol;
       }
     });
 
     const netoCantidad = totalEntradas - totalSalidas;
+    const netoVolumenM3 = Math.max(0, Math.round((totalVolumenEntradas - totalVolumenSalidas) * 10000) / 10000);
 
     return {
       totalEntradas,
       totalSalidas,
+      totalVolumenEntradas,
+      totalVolumenSalidas,
       totalCantidad: netoCantidad,
       netoCantidad,
-      totalVolumenM3,
+      totalVolumenM3: netoVolumenM3,
+      netoVolumenM3,
     };
   }, [quickKardexMovimientos]);
 
@@ -1824,8 +1830,18 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                                   </span>
                                 )}
                               </td>
-                              <td className="py-2 px-3 text-right font-mono font-bold text-xs text-violet-700 dark:text-[#dab9ff]">
-                                {formatM3(m.volumen_m3 || 0)}
+                              <td className="py-2 px-3 text-right font-mono font-bold text-xs tabular-nums">
+                                {esEntrada ? (
+                                  <span className="inline-flex items-center gap-0.5 text-emerald-700 dark:text-emerald-400">
+                                    <ArrowDownLeft className="w-2.5 h-2.5" />+{formatM3(m.volumen_m3 || 0)}
+                                  </span>
+                                ) : esSalida ? (
+                                  <span className="inline-flex items-center gap-0.5 text-rose-700 dark:text-rose-400">
+                                    <ArrowUpRight className="w-2.5 h-2.5" />-{formatM3(m.volumen_m3 || 0)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-600 dark:text-[#cdc3d4]">{formatM3(m.volumen_m3 || 0)}</span>
+                                )}
                               </td>
                             </tr>
                           );
@@ -1839,12 +1855,12 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                                 <span className="text-[10px] uppercase font-bold text-violet-700 dark:text-[#dab9ff]">
                                   Saldo Físico Neto ({quickKardexMovimientos.length} movs.)
                                 </span>
-                                <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 font-semibold">
-                                  +{formatNumber(quickKardexTotals.totalEntradas, 0)} Entradas
+                                <span className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 font-semibold" title="Entradas Volumen">
+                                  +{formatNumber(quickKardexTotals.totalEntradas, 0)} un. ({formatM3(quickKardexTotals.totalVolumenEntradas)})
                                 </span>
                                 <span className="text-slate-400 dark:text-[#978d9d] text-[10px]">•</span>
-                                <span className="text-[10px] font-mono text-rose-700 dark:text-rose-400 font-semibold">
-                                  -{formatNumber(quickKardexTotals.totalSalidas, 0)} Salidas
+                                <span className="text-[10px] font-mono text-rose-700 dark:text-rose-400 font-semibold" title="Salidas Volumen">
+                                  -{formatNumber(quickKardexTotals.totalSalidas, 0)} un. ({formatM3(quickKardexTotals.totalVolumenSalidas)})
                                 </span>
                               </div>
                             </td>
@@ -1886,7 +1902,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
                   </span>
                   <span>•</span>
                   <span>
-                    Volumen Total:{' '}
+                    Volumen Neto:{' '}
                     <strong className="text-violet-700 dark:text-[#dab9ff] font-mono">{formatM3(quickKardexTotals.totalVolumenM3)}</strong>
                   </span>
                 </div>
