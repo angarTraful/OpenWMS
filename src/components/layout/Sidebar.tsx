@@ -64,10 +64,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const sections: NavSection[] = [
     {
-      title: 'Operaciones',
+      title: 'Operativo',
       items: [
-        { id: 'overview', label: 'Tablero Operativo', icon: Activity },
-        { id: 'inventory', label: 'Inventario & M3', icon: Layers },
+        { id: 'overview', label: 'Tablero de control', icon: Activity },
+        { id: 'inventory', label: 'Inventario & Stock', icon: Layers },
         { id: 'inbound', label: 'Inbound / Recepción', icon: ArrowDownToLine },
         { id: 'outbound', label: 'Picking & Despacho', icon: ArrowUpFromLine },
         { id: 'kardex', label: 'Kardex Trazabilidad', icon: History },
@@ -120,14 +120,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <div className="flex items-center gap-1.5">
                 <span className="font-extrabold tracking-tight text-base text-slate-900 dark:text-[#e5e2e1] group-hover:text-violet-600 dark:group-hover:text-[#dab9ff] transition-colors">
-                  SIGMA WMS
+                  SIGMA
                 </span>
                 <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-violet-50 dark:bg-[#241138] text-violet-700 dark:text-[#dab9ff] border border-violet-200 dark:border-[#5a2e8c]">
-                  Open Cargo
+                  WMS
                 </span>
               </div>
               <p className="text-[10px] text-slate-500 dark:text-[#978d9d] font-normal leading-tight mt-0.5 truncate">
-                Gestión Operativa
+                Open Cargo
               </p>
             </motion.div>
           )}

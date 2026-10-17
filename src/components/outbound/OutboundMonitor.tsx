@@ -2345,7 +2345,7 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
         tipo="pedido"
         idEntidad={pedidoForRemito?.id || selectedPedido?.id || ''}
         numeroReferencia={pedidoForRemito?.numero_pedido || selectedPedido?.numero_pedido || ''}
-        detallesArticulos={(detailData && (detailData.id === pedidoForRemito?.id || detailData.id === selectedPedido?.id))?.detalles || pedidoForRemito?.detalles || selectedPedido?.detalles || []}
+        detallesArticulos={((detailData && (detailData.id === pedidoForRemito?.id || detailData.id === selectedPedido?.id)) ? detailData.detalles : null) || pedidoForRemito?.detalles || selectedPedido?.detalles || []}
         onSuccess={onRefresh}
       />
 

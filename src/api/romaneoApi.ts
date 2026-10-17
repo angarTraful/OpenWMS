@@ -95,6 +95,15 @@ export const romaneoApi = {
     return data;
   },
 
+  async eliminarExcepcionRecepcion(id: string) {
+    const { error } = await supabase
+      .from('ordenes_recepcion_romaneo_excepciones')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+  },
+
   // --- ROMANEO REMITOS / PLANILLA INDEPENDIENTE (OUTBOUND) ---
   async listarRomaneoPedido(pedidoId: string) {
     const { data, error } = await supabase
@@ -132,5 +141,15 @@ export const romaneoApi = {
 
     if (error) throw error;
     return data;
+  },
+
+  async eliminarRomaneoPedido(id: string) {
+    const { error } = await supabase
+      .from('remitos_romaneo_excepciones')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
   }
 };
+

@@ -12,7 +12,9 @@ import {
 } from 'lucide-react';
 import { romaneoApi, RomaneoExcepcion } from '@/api/romaneoApi';
 import { formatNumber } from '@/lib/utils';
-import { getDescripcionFull } from '@/api/articulosApi';
+import { articulosApi, getDescripcionFull } from '@/api/articulosApi';
+import { pedidosApi } from '@/api/pedidosApi';
+import { recepcionesApi } from '@/api/recepcionesApi';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 
 interface RomaneoEditorModalProps {
@@ -48,21 +50,67 @@ export const RomaneoEditorModal: React.FC<RomaneoEditorModalProps> = ({
   const [unidadMedida, setUnidadMedida] = useState<string>('mts');
   const [observaciones, setObservaciones] = useState<string>('');
 
+  const [itemsDisponibles, setItemsDisponibles] = useState<any[]>(detallesArticulos || []);
+
   useEffect(() => {
     if (isOpen && idEntidad) {
       cargarDatosRomaneo();
     }
   }, [isOpen, idEntidad]);
 
-  // Autoseleccionar primer artículo si está disponible
+  // Resolver detalles de artículos completos si vienen incompletos
   useEffect(() => {
-    if (detallesArticulos && detallesArticulos.length > 0) {
-      const art = detallesArticulos[0].articulo || {};
-      setSelectedArticuloId(art.id || detallesArticulos[0].articulo_id || '');
+    const resolverArticulos = async () => {
+      if (detallesArticulos && detallesArticulos.length > 0 && detallesArticulos[0]?.articulo?.nombre) {
+        setItemsDisponibles(detallesArticulos);
+        return;
+      }
+      if (!idEntidad) return;
+
+      try {
+        if (tipo === 'pedido') {
+          const ped = await pedidosApi.obtenerPedidoConDetalle(idEntidad);
+          if (ped?.detalles && ped.detalles.length > 0) {
+            setItemsDisponibles(ped.detalles);
+            return;
+          }
+        } else if (tipo === 'recepcion') {
+          const rec = await recepcionesApi.obtenerRecepcionConDetalle(idEntidad);
+          if (rec?.detalles && rec.detalles.length > 0) {
+            setItemsDisponibles(rec.detalles);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('No se pudo cargar detalle completo de la entidad:', e);
+      }
+
+      // Si no hay detalles específicos, cargar artículos del catálogo
+      try {
+        const arts = await articulosApi.listarArticulos();
+        if (arts && arts.length > 0) {
+          setItemsDisponibles(arts.map((a) => ({ articulo_id: a.id, articulo: a })));
+        }
+      } catch (e) {
+        console.error('Error cargando catálogo:', e);
+      }
+    };
+
+    if (isOpen) {
+      resolverArticulos();
+    }
+  }, [isOpen, idEntidad, tipo, detallesArticulos]);
+
+  // Autoseleccionar primer artículo cuando haya disponibles
+  useEffect(() => {
+    if (itemsDisponibles && itemsDisponibles.length > 0) {
+      const art = itemsDisponibles[0].articulo || {};
+      const artId = art.id || itemsDisponibles[0].articulo_id || '';
+      setSelectedArticuloId(artId);
       setMedidaEstandar(Number(art.unidades_por_bulto || 50));
       setUnidadMedida(art.unidad_medida || 'mts');
     }
-  }, [detallesArticulos]);
+  }, [itemsDisponibles]);
 
   const cargarDatosRomaneo = async () => {
     setLoading(true);
@@ -74,8 +122,15 @@ export const RomaneoEditorModal: React.FC<RomaneoEditorModalProps> = ({
         const data = await romaneoApi.listarRomaneoPedido(idEntidad);
         setExcepciones(data || []);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error al cargar romaneo:', err);
+      const msg = err?.message || '';
+      if (msg.includes('schema cache') || msg.includes('does not exist') || msg.includes('PGRST205')) {
+        setFeedback({
+          type: 'error',
+          text: 'Falta ejecutar la migración SQL de Romaneo en Supabase (las tablas ordenes_recepcion_romaneo_excepciones y remitos_romaneo_excepciones no existen en la base de datos).',
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -83,7 +138,7 @@ export const RomaneoEditorModal: React.FC<RomaneoEditorModalProps> = ({
 
   const handleArticuloChange = (articuloId: string) => {
     setSelectedArticuloId(articuloId);
-    const det = detallesArticulos.find(
+    const det = itemsDisponibles.find(
       (d) => (d.articulo?.id || d.articulo_id) === articuloId
     );
     if (det) {
@@ -101,7 +156,7 @@ export const RomaneoEditorModal: React.FC<RomaneoEditorModalProps> = ({
     setSaving(true);
     setFeedback(null);
     try {
-      const artSelect = detallesArticulos.find(
+      const artSelect = itemsDisponibles.find(
         (d) => (d.articulo?.id || d.articulo_id) === selectedArticuloId
       )?.articulo;
 
@@ -127,14 +182,39 @@ export const RomaneoEditorModal: React.FC<RomaneoEditorModalProps> = ({
       setNroSecuencia((prev) => prev + 1);
       setCodigoLpn('');
       setObservaciones('');
-      setFeedback({ type: 'success', text: 'Rollo especial agregado al romaneo.' });
+      setFeedback({ type: 'success', text: 'Rollo especial agregado al romaneo exitosamente.' });
 
       if (onSuccess) onSuccess();
     } catch (err: any) {
       console.error('Error al guardar romaneo:', err);
-      setFeedback({ type: 'error', text: err.message || 'Error al guardar el rollo en el romaneo.' });
+      const msg = err?.message || '';
+      if (msg.includes('schema cache') || msg.includes('does not exist') || msg.includes('PGRST205')) {
+        setFeedback({
+          type: 'error',
+          text: 'Falta ejecutar la migración SQL de Romaneo en Supabase. Ver consola o migración 20261004000000.',
+        });
+      } else {
+        setFeedback({ type: 'error', text: msg || 'Error al guardar el rollo en el romaneo.' });
+      }
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleEliminarFila = async (id?: string) => {
+    if (!id) return;
+    try {
+      if (tipo === 'recepcion') {
+        await romaneoApi.eliminarExcepcionRecepcion(id);
+      } else {
+        await romaneoApi.eliminarRomaneoPedido(id);
+      }
+      await cargarDatosRomaneo();
+      setFeedback({ type: 'success', text: 'Rollo eliminado del romaneo exitosamente.' });
+      if (onSuccess) onSuccess();
+    } catch (err: any) {
+      console.error('Error al eliminar rollo:', err);
+      setFeedback({ type: 'error', text: err.message || 'Error al eliminar el rollo del romaneo.' });
     }
   };
 
@@ -177,9 +257,9 @@ export const RomaneoEditorModal: React.FC<RomaneoEditorModalProps> = ({
                   <select
                     value={selectedArticuloId}
                     onChange={(e) => handleArticuloChange(e.target.value)}
-                    className="w-full bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-[#e5e2e1] font-bold outline-none focus:border-blue-500"
+                    className="w-full bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-[#e5e2e1] font-bold outline-none focus:border-blue-500 cursor-pointer"
                   >
-                    {detallesArticulos.map((d: any) => {
+                    {itemsDisponibles.map((d: any) => {
                       const art = d.articulo || {};
                       const artId = art.id || d.articulo_id;
                       return (
@@ -307,6 +387,7 @@ export const RomaneoEditorModal: React.FC<RomaneoEditorModalProps> = ({
                     <th className="p-2.5 text-center">Medida Std</th>
                     <th className="p-2.5 text-center">Medida Real</th>
                     <th className="p-2.5 text-right">Diferencia</th>
+                    <th className="p-2.5 text-center w-10">Acción</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-[#333333]">
@@ -328,6 +409,16 @@ export const RomaneoEditorModal: React.FC<RomaneoEditorModalProps> = ({
                         </td>
                         <td className={`p-2.5 text-right font-mono font-bold ${diff >= 0 ? 'text-blue-600 dark:text-[#75d1ff]' : 'text-amber-600 dark:text-[#ffddb8]'}`}>
                           {diff > 0 ? '+' : ''}{formatNumber(diff)} {ex.unidad_medida}
+                        </td>
+                        <td className="p-2.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleEliminarFila(ex.id)}
+                            title="Eliminar rollo de romaneo"
+                            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-[#381015] dark:hover:text-[#ffb4ab] rounded transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </td>
                       </tr>
                     );

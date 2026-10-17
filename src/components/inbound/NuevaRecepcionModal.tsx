@@ -166,9 +166,8 @@ const ArticuloSearchPicker: React.FC<ArticuloSearchPickerProps> = ({
                     setIsOpen(false);
                     setQuery('');
                   }}
-                  className={`w-full px-3 py-2 text-left flex items-start gap-2 hover:bg-slate-50 dark:hover:bg-[#26242a] transition-colors ${
-                    art.id === selectedArticuloId ? 'bg-violet-50 text-violet-700 dark:bg-[#2a173d]/60 dark:text-[#dab9ff]' : 'text-slate-800 dark:text-[#e5e2e1]'
-                  }`}
+                  className={`w-full px-3 py-2 text-left flex items-start gap-2 hover:bg-slate-50 dark:hover:bg-[#26242a] transition-colors ${art.id === selectedArticuloId ? 'bg-violet-50 text-violet-700 dark:bg-[#2a173d]/60 dark:text-[#dab9ff]' : 'text-slate-800 dark:text-[#e5e2e1]'
+                    }`}
                 >
                   <span className="font-mono font-bold text-violet-700 dark:text-[#dab9ff] bg-slate-100 dark:bg-[#131313] px-1.5 py-0.5 rounded border border-slate-200 dark:border-[#333333] text-[10px] shrink-0">
                     {art.nombre}
@@ -210,9 +209,8 @@ interface NuevaRecepcionModalProps {
 
 const DEFAULT_TIPOS_CNTR = [
   "cont. 20'",
-  "40' STD",
-  "40' HC",
-  "45' HC",
+  "Cont. 40' STD",
+  "Cont. 40' HC",
   "Chasis / Camión Abierto",
   "Furgón Paquetero",
   "Sider / Semirremolque",
@@ -250,7 +248,7 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
     } catch { }
     return DEFAULT_TIPOS_CNTR;
   });
-  const [tipoContenedor, setTipoContenedor] = useState<string>("cont. 20'");
+  const [tipoContenedor, setTipoContenedor] = useState<string>("Cont. 40' HC");
   const [nuevoTipoModal, setNuevoTipoModal] = useState<boolean>(false);
   const [nuevoTipoTexto, setNuevoTipoTexto] = useState<string>('');
 
@@ -304,7 +302,7 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
       setAlmacenId(defaultAlmacenId || (almacenes[0]?.id ?? ''));
       setClienteId(defaultClienteId || (clientes[0]?.id ?? ''));
       setNroContenedorOc('');
-      setTipoContenedor("cont. 20'");
+      setTipoContenedor("Cont. 40' HC");
       setTransporteEmpresa('');
       setPatenteCamion('');
       setChoferNombre('');
@@ -646,8 +644,8 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
             {feedback && (
               <div
                 className={`p-2.5 rounded text-xs font-medium flex items-center gap-2.5 ${feedback.type === 'success'
-                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-[#0f241a] dark:text-[#75d1ff] dark:border-[#1d4d38]'
-                    : 'bg-rose-50 text-rose-800 border border-rose-200 dark:bg-[#2a0e12] dark:text-[#ffb4ab] dark:border-[#690005]'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-[#0f241a] dark:text-[#75d1ff] dark:border-[#1d4d38]'
+                  : 'bg-rose-50 text-rose-800 border border-rose-200 dark:bg-[#2a0e12] dark:text-[#ffb4ab] dark:border-[#690005]'
                   }`}
               >
                 {feedback.type === 'success' ? (
