@@ -583,7 +583,7 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
         type: 'success',
         message: recibirDirecto
           ? `¡Orden ${numeroRecepcion} creada e ingresada directamente al stock en estado Finalizada!`
-          : `¡Orden ${numeroRecepcion} registrada en estado Inbound con Lote [${loteOperacion}]!`,
+          : `¡Orden ${numeroRecepcion} registrada en estado Programada! Lista para asignar muelle y registrar el IN.`,
       });
 
       setTimeout(() => {
@@ -1346,7 +1346,7 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
                 {isSubmitting ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>{recibirDirecto ? 'Ingresando a Stock...' : 'Creando Orden...'}</span>
+                    <span>{recibirDirecto ? 'Ingresando a Stock...' : 'Programando Orden...'}</span>
                   </>
                 ) : recibirDirecto ? (
                   <>
@@ -1356,7 +1356,7 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Crear Orden (Inbound)</span>
+                    <span>Crear Orden Programada</span>
                   </>
                 )}
               </button>

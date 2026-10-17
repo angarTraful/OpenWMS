@@ -23,6 +23,7 @@ import {
   X,
   Edit2,
   Check,
+  Lock,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { formatDate, formatDateTime, formatNumber, formatM3 } from '@/lib/utils';
@@ -31,6 +32,7 @@ import { almacenApi } from '@/api/almacenApi';
 import { getDescripcionFull } from '@/api/articulosApi';
 import { NuevaRecepcionModal } from './NuevaRecepcionModal';
 import { RecursosDescargaModal } from './RecursosDescargaModal';
+import { AsignarMuelleModal } from './AsignarMuelleModal';
 import { BrotherLabelPrinterModal } from '@/components/common/BrotherLabelPrinterModal';
 import { RomaneoEditorModal } from '@/components/common/RomaneoEditorModal';
 import { ModalPortal } from '@/components/ui/ModalPortal';
@@ -63,8 +65,10 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
   const [loteDetalleEditado, setLoteDetalleEditado] = useState('');
   const [lotePutaway, setLotePutaway] = useState('');
 
-  // Modal Nueva Recepción, Recursos, Romaneo y Etiquetas
+  // Modal Nueva Recepción, Asignar Muelle, Recursos, Romaneo y Etiquetas
   const [nuevaRecepcionModalOpen, setNuevaRecepcionModalOpen] = useState(false);
+  const [asignarMuelleModalOpen, setAsignarMuelleModalOpen] = useState(false);
+  const [recepcionParaIngreso, setRecepcionParaIngreso] = useState<any | null>(null);
   const [recursosModalOpen, setRecursosModalOpen] = useState(false);
   const [romaneoEditorOpen, setRomaneoEditorOpen] = useState(false);
   const [labelModalOpen, setLabelModalOpen] = useState(false);
@@ -355,9 +359,11 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
       case 'finalizada':
         return <Badge variant="success" dot>Finalizada</Badge>;
       case 'en_control':
-        return <Badge variant="warning" dot pulse>En Control</Badge>;
+        return <Badge variant="warning" dot pulse>A Controlar</Badge>;
+      case 'programada':
+        return <Badge variant="outline" dot>Programada</Badge>;
       case 'inbound':
-        return <Badge variant="info" dot pulse>Inbound</Badge>;
+        return <Badge variant="info" dot pulse>En Muelle</Badge>;
       case 'en_descarga':
         return <Badge variant="info" dot pulse>En Descarga</Badge>;
       case 'en_playa':
@@ -423,8 +429,9 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
           <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-100 dark:bg-[#131313] border border-slate-200 dark:border-[#333333] overflow-x-auto">
             {[
               { id: 'todos', label: 'Todas' },
-              { id: 'inbound', label: 'Arribo' },
-              { id: 'en_control', label: 'En Control' },
+              { id: 'programada', label: 'Programadas' },
+              { id: 'en_control', label: 'A Controlar' },
+              { id: 'inbound', label: 'En Muelle' },
               { id: 'finalizada', label: 'Finalizadas' },
             ].map((st) => (
               <button
@@ -506,29 +513,48 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
 
                         {rec.estado !== 'finalizada' && (
                           <>
-                            {rec.estado === 'inbound' && (
+                            {rec.estado === 'programada' && (
                               <button
-                                onClick={async (e) => {
+                                onClick={(e) => {
                                   e.stopPropagation();
-                                  await recepcionesApi.actualizarEstado(rec.id, 'en_control');
-                                  onRefresh();
+                                  setRecepcionParaIngreso(rec);
+                                  setAsignarMuelleModalOpen(true);
                                 }}
-                                className="px-2 py-1 text-[11px] font-medium rounded-lg border border-amber-300 dark:border-[#eab308]/40 bg-amber-50 dark:bg-[#2d240d] text-amber-800 dark:text-[#fef08a] hover:bg-amber-100 dark:hover:bg-[#3f3213] transition-colors"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white dark:bg-[#75d1ff] dark:hover:bg-[#a6e2ff] dark:text-[#00344d] transition-all shadow-xs"
+                                title="Asignar depósito y muelle para hacer el IN"
                               >
-                                Iniciar Control
+                                <ArrowDownToLine className="w-3.5 h-3.5" />
+                                <span>Ingresar</span>
                               </button>
                             )}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleConformarRecepcionDirecta(rec);
-                              }}
-                              disabled={isConformingDirectId === rec.id}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-violet-600 hover:bg-violet-700 text-white dark:bg-[#dab9ff] dark:hover:bg-[#eedbff] dark:text-[#460283] transition-all shadow-sm disabled:opacity-50"
-                            >
-                              <Zap className="w-3 h-3 text-white dark:text-[#460283]" />
-                              <span>{isConformingDirectId === rec.id ? 'Recibiendo...' : '⚡ Recibir sin contar'}</span>
-                            </button>
+
+                            {rec.estado === 'inbound' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setRecepcionParaIngreso(rec);
+                                  setAsignarMuelleModalOpen(true);
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-lg border border-blue-300 dark:border-[#75d1ff]/40 bg-blue-50 dark:bg-[#0f2434] text-blue-800 dark:text-[#75d1ff] hover:bg-blue-100 transition-colors"
+                              >
+                                <ArrowDownToLine className="w-3 h-3" />
+                                <span>Asignar Muelle / IN</span>
+                              </button>
+                            )}
+
+                            {rec.estado === 'en_control' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleConformarRecepcionDirecta(rec);
+                                }}
+                                disabled={isConformingDirectId === rec.id}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-violet-600 hover:bg-violet-700 text-white dark:bg-[#dab9ff] dark:hover:bg-[#eedbff] dark:text-[#460283] transition-all shadow-sm disabled:opacity-50"
+                              >
+                                <Zap className="w-3 h-3 text-white dark:text-[#460283]" />
+                                <span>{isConformingDirectId === rec.id ? 'Recibiendo...' : '⚡ Recibir sin contar'}</span>
+                              </button>
+                            )}
                           </>
                         )}
 
@@ -580,10 +606,12 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                       <div className="sm:text-right">
                         <span className="text-[#978d9d] block text-[10px]">Estado Operativo:</span>
                         <span className="text-[#dab9ff] font-semibold">
-                          {rec.estado === 'inbound'
+                          {rec.estado === 'programada'
+                            ? '📅 Programada (Pendiente IN)'
+                            : rec.estado === 'inbound'
                             ? 'En muelle de descarga'
                             : rec.estado === 'en_control'
-                            ? 'Confronta en progreso'
+                            ? 'A Controlar (Confronta)'
                             : 'Finalizada / En stock'}
                         </span>
                       </div>
@@ -611,17 +639,28 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {selectedRecepcion.estado === 'programada' && (
+                    <button
+                      onClick={() => {
+                        setRecepcionParaIngreso(selectedRecepcion);
+                        setAsignarMuelleModalOpen(true);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white dark:bg-[#75d1ff] dark:hover:bg-[#a6e2ff] dark:text-[#00344d] transition-colors shadow-sm"
+                    >
+                      <ArrowDownToLine className="w-3.5 h-3.5" />
+                      <span>Hacer IN & Asignar Muelle</span>
+                    </button>
+                  )}
                   {selectedRecepcion.estado === 'inbound' && (
                     <button
-                      onClick={async () => {
-                        await recepcionesApi.actualizarEstado(selectedRecepcion.id, 'en_control');
-                        handleSelectRecepcion({ ...selectedRecepcion, estado: 'en_control' });
-                        onRefresh();
+                      onClick={() => {
+                        setRecepcionParaIngreso(selectedRecepcion);
+                        setAsignarMuelleModalOpen(true);
                       }}
                       className="px-2 py-1 text-xs font-semibold rounded-lg border border-amber-300 dark:border-[#eab308]/40 bg-amber-50 dark:bg-[#2d240d] text-amber-800 dark:text-[#fef08a] hover:bg-amber-100 dark:hover:bg-[#3f3213] transition-colors"
-                      title="Pasar la orden al estado En Control para iniciar conteo físico"
+                      title="Asignar muelle y pasar a estado A Controlar"
                     >
-                      Iniciar Control &rarr;
+                      Asignar Muelle & Control &rarr;
                     </button>
                   )}
                   {selectedRecepcion.estado !== 'finalizada' && (
@@ -662,7 +701,15 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-400 dark:text-[#978d9d] block uppercase font-semibold">Lote Operación:</span>
-                      {isEditingLote ? (
+                      {detailData.estado !== 'programada' ? (
+                        <div className="flex items-center gap-1.5 mt-0.5" title="El lote no puede modificarse una vez realizado el IN (A Controlar)">
+                          <span className="font-mono font-bold text-violet-700 dark:text-[#dab9ff]">{detailData.lote_defecto || 'N/A'}</span>
+                          <span className="inline-flex items-center gap-0.5 text-[9px] text-slate-500 dark:text-[#978d9d] bg-slate-100 dark:bg-[#252424] px-1 py-0.5 rounded border border-slate-200 dark:border-[#333333]">
+                            <Lock className="w-2.5 h-2.5 text-slate-400" />
+                            <span>Fijado</span>
+                          </span>
+                        </div>
+                      ) : isEditingLote ? (
                         <div className="flex items-center gap-1 mt-0.5">
                           <input
                             type="text"
@@ -702,7 +749,7 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                               setIsEditingLote(true);
                             }}
                             className="p-0.5 text-slate-400 hover:text-violet-600 dark:text-[#cdc3d4] dark:hover:text-[#dab9ff] rounded hover:bg-slate-200 dark:hover:bg-[#2a2a2a] transition-colors"
-                            title="Modificar lote de la recepción"
+                            title="Modificar lote de la recepción (permitido antes del IN)"
                           >
                             <Edit2 className="w-3 h-3" />
                           </button>
@@ -845,7 +892,12 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                             </span>
                             <div className="text-[11px] text-slate-600 dark:text-[#cdc3d4] flex items-center gap-1.5 mt-0.5">
                               <span>Lote:</span>
-                              {editingDetalleId === det.id ? (
+                              {detailData?.estado !== 'programada' ? (
+                                <div className="flex items-center gap-1" title="El lote no puede modificarse una vez realizado el IN (A Controlar)">
+                                  <span className="font-mono font-bold text-violet-700 dark:text-[#dab9ff]">{det.lote_declarado || 'N/A'}</span>
+                                  <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                </div>
+                              ) : editingDetalleId === det.id ? (
                                 <div className="flex items-center gap-1">
                                   <input
                                     type="text"
@@ -885,7 +937,7 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                                       setEditingDetalleId(det.id);
                                     }}
                                     className="p-0.5 text-slate-400 hover:text-violet-600 dark:text-[#cdc3d4] dark:hover:text-[#dab9ff] rounded hover:bg-slate-200 dark:hover:bg-[#2a2a2a] transition-colors"
-                                    title="Modificar lote de este artículo"
+                                    title="Modificar lote de este artículo (permitido antes del IN)"
                                   >
                                     <Edit2 className="w-3 h-3" />
                                   </button>
@@ -1273,6 +1325,23 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
         recepcionId={selectedRecepcion?.id || detailData?.id || ''}
         numeroRecepcion={selectedRecepcion?.numero_recepcion || detailData?.numero_recepcion || ''}
         onSuccess={onRefresh}
+      />
+
+      {/* Modal Asignar Muelle & Registrar IN */}
+      <AsignarMuelleModal
+        isOpen={asignarMuelleModalOpen}
+        onClose={() => {
+          setAsignarMuelleModalOpen(false);
+          setRecepcionParaIngreso(null);
+        }}
+        recepcion={recepcionParaIngreso}
+        almacenes={almacenes}
+        onSuccess={() => {
+          onRefresh();
+          if (selectedRecepcion && recepcionParaIngreso?.id === selectedRecepcion.id) {
+            handleSelectRecepcion({ ...selectedRecepcion, estado: 'en_control' });
+          }
+        }}
       />
 
       {/* Modal Carga / Edición de Romaneo */}

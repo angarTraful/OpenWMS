@@ -194,11 +194,12 @@ export const inventarioApi = {
       .from('movimientos_inventario')
       .select(`
         *,
-        cliente:clientes(id, razon_social),
-        articulo:articulos(id, sku, id_producto, nombre, color, tipo_empaque, ean13),
-        lote:lotes_cliente(id, numero_lote, fecha_vencimiento),
-        origen:ubicaciones!movimientos_inventario_ubicacion_origen_id_fkey(codigo_etiqueta),
-        destino:ubicaciones!movimientos_inventario_ubicacion_destino_id_fkey(codigo_etiqueta)
+        cliente:clientes(id, razon_social, identificacion_fiscal, unidad_negocio),
+        articulo:articulos(id, sku, id_producto, nombre, color, tipo_empaque, ean13, descripcion, descripcion_full, unidades_por_bulto, unidad_medida, peso_unitario_kg, volumen_unitario_m3, valor_declarado),
+        lote:lotes_cliente(id, numero_lote, fecha_vencimiento, fecha_fabricacion),
+        origen:ubicaciones!movimientos_inventario_ubicacion_origen_id_fkey(id, codigo_etiqueta, pasillo, estante, nivel),
+        destino:ubicaciones!movimientos_inventario_ubicacion_destino_id_fkey(id, codigo_etiqueta, pasillo, estante, nivel),
+        pallet:pallets_lpn(id, codigo_lpn)
       `)
       .order('fecha_hora', { ascending: false })
       .limit(limite);

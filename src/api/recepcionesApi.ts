@@ -90,6 +90,54 @@ export const recepcionesApi = {
     });
 
     if (error) throw error;
+
+    // Si no es recepción directa inmediata, asegurar estado 'programada'
+    if (!params.recibirDirecto && data?.recepcion_id) {
+      try {
+        await supabase
+          .from('ordenes_recepcion')
+          .update({ estado: 'programada' })
+          .eq('id', data.recepcion_id);
+      } catch (e) {
+        console.warn('Error asegurando estado programada:', e);
+      }
+    }
+
+    return data;
+  },
+
+  async registrarIngresoEnPlanta(params: {
+    recepcionId: string;
+    almacenId?: string;
+    muelle?: string;
+    observaciones?: string;
+  }) {
+    const updatePayload: Record<string, any> = {
+      estado: 'en_control',
+      actualizado_en: new Date().toISOString(),
+    };
+
+    if (params.almacenId) {
+      updatePayload.almacen_id = params.almacenId;
+    }
+
+    if (params.observaciones || params.muelle) {
+      const notaMuelle = params.muelle ? `[Muelle: ${params.muelle}]` : '';
+      updatePayload.observaciones = [notaMuelle, params.observaciones].filter(Boolean).join(' ');
+    }
+
+    const { data, error } = await supabase
+      .from('ordenes_recepcion')
+      .update(updatePayload)
+      .eq('id', params.recepcionId)
+      .select(`
+        *,
+        cliente:clientes(*),
+        almacen:almacenes(*)
+      `)
+      .single();
+
+    if (error) throw error;
     return data;
   },
 

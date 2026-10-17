@@ -184,6 +184,7 @@ export const rfApi = {
               id,
               numero_recepcion,
               almacen_id,
+              estado,
               cliente:clientes(razon_social)
             )
           )
@@ -201,7 +202,7 @@ export const rfApi = {
             cantidad_esperada: t.recepcion_detalle?.cantidad_esperada ?? t.cantidad_recibida ?? 0,
             recepcion: t.recepcion_detalle?.recepcion,
           }))
-          .filter((t: any) => !almacenId || !t.recepcion?.almacen_id || t.recepcion?.almacen_id === almacenId);
+          .filter((t: any) => (!almacenId || !t.recepcion?.almacen_id || t.recepcion?.almacen_id === almacenId) && t.recepcion?.estado !== 'programada');
       }
     } catch (err: any) {
       console.warn('Fallo consulta principal putaway, ejecutando fallback:', err?.message || err);
@@ -227,6 +228,7 @@ export const rfApi = {
                 id,
                 numero_recepcion,
                 almacen_id,
+                estado,
                 cliente:clientes(razon_social)
               )
             )
@@ -242,7 +244,7 @@ export const rfApi = {
               cantidad_esperada: t.recepcion_detalle?.cantidad_esperada ?? t.cantidad_recibida ?? 0,
               recepcion: t.recepcion_detalle?.recepcion,
             }))
-            .filter((t: any) => !almacenId || !t.recepcion?.almacen_id || t.recepcion?.almacen_id === almacenId);
+            .filter((t: any) => (!almacenId || !t.recepcion?.almacen_id || t.recepcion?.almacen_id === almacenId) && t.recepcion?.estado !== 'programada');
         }
       } catch (fbErr) {
         console.error('Error en fallback putaway tareas:', fbErr);

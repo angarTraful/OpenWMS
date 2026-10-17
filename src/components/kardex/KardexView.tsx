@@ -17,11 +17,13 @@ import {
   ArrowRightLeft,
   Sparkles,
   Upload,
+  Eye,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { formatDateTime, formatNumber, formatM3, formatDate, cn } from '@/lib/utils';
 import { getDescripcionFull } from '@/api/articulosApi';
 import { ImportarMovimientosModal } from '@/components/inventory/ImportarMovimientosModal';
+import { KardexOperacionModal } from './KardexOperacionModal';
 import {
   TableContainer,
   SortableHeaderCell,
@@ -102,6 +104,7 @@ export const KardexView: React.FC<KardexViewProps> = ({
   const [sortAsc, setSortAsc] = useState<boolean>(false);
   const [selectedArticuloId, setSelectedArticuloId] = useState<string | null>(filtroArticuloId || null);
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
+  const [selectedMovimiento, setSelectedMovimiento] = useState<any | null>(null);
 
   // Filtro de Rango Fecha / Hora (Inicio y Fin)
   const [fechaHoraDesde, setFechaHoraDesde] = useState<string>('');
@@ -430,14 +433,14 @@ export const KardexView: React.FC<KardexViewProps> = ({
     switch (tipo) {
       case 'recepcion':
       case 'ingreso_inicial':
-        return <Badge variant="success" dot pulse>Entrada / Recepción</Badge>;
+      case 'putaway':
+        return <Badge variant="success" dot pulse>Ingreso</Badge>;
       case 'despacho':
         return <Badge variant="danger" dot>Salida / Despacho</Badge>;
       case 'picking':
         return <Badge variant="warning" dot>Picking / Preparación</Badge>;
-      case 'putaway':
-        return <Badge variant="success" dot pulse>Entrada / Putaway</Badge>;
       case 'transferencia':
+      case 'transferencia_interna':
         return <Badge variant="outline" dot>Transferencia Interna</Badge>;
       case 'ajuste_positivo':
         return <Badge variant="info" dot>Ajuste (+)</Badge>;
@@ -645,7 +648,7 @@ export const KardexView: React.FC<KardexViewProps> = ({
                         : 'text-slate-600 dark:text-[#cdc3d4] hover:text-slate-900 dark:hover:text-[#e5e2e1]'
                     )}
                   >
-                    <span>{t}</span>
+                    <span>{t === 'putaway' || t === 'recepcion' || t === 'ingreso_inicial' ? 'Ingreso' : t}</span>
                   </button>
                 );
               })}
@@ -922,6 +925,9 @@ export const KardexView: React.FC<KardexViewProps> = ({
                   onSort={toggleSort}
                   align="right"
                 />
+                <th className="py-2.5 px-2 text-center w-10 text-[10px] uppercase font-semibold text-slate-500 dark:text-[#cdc3d4]">
+                  Ver
+                </th>
               </tr>
 
               {/* Column Filters Subheader Row */}
@@ -932,7 +938,10 @@ export const KardexView: React.FC<KardexViewProps> = ({
                     <ColumnFilterSelect
                       value={colFilters.tipo}
                       onChange={(val) => handleColFilterChange('tipo', val)}
-                      options={tiposDisponibles.map((t) => ({ label: t, value: t }))}
+                      options={tiposDisponibles.map((t) => ({
+                        label: t === 'putaway' || t === 'recepcion' || t === 'ingreso_inicial' ? 'Ingreso' : t,
+                        value: t,
+                      }))}
                       placeholder="Todos los tipos"
                     />
                   </th>
@@ -966,16 +975,17 @@ export const KardexView: React.FC<KardexViewProps> = ({
                   </th>
                   <th className="py-1.5 px-2" />
                   <th className="py-1.5 px-2" />
+                  <th className="py-1.5 px-2" />
                 </tr>
               )}
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-[#44424a]">
               {isLoading ? (
-                <TableSkeleton columns={8} rows={6} />
+                <TableSkeleton columns={9} rows={6} />
               ) : paginatedMovimientos.length === 0 ? (
                 <TableEmptyState
                   icon={History}
-                  colSpan={8}
+                  colSpan={9}
                   title="No hay movimientos en el Kardex"
                   description={
                     searchTerm || tipoFiltro !== 'ALL' || selectedArticuloId || fechaHoraDesde || fechaHoraHasta
@@ -991,7 +1001,13 @@ export const KardexView: React.FC<KardexViewProps> = ({
                     const esInterno = esMovimientoInterno(m.tipo_movimiento);
 
                     return (
-                      <AnimatedTableRow key={m.id} index={idx} isClickable={false}>
+                      <AnimatedTableRow
+                        key={m.id}
+                        index={idx}
+                        isClickable={true}
+                        onClick={() => setSelectedMovimiento(m)}
+                        className="cursor-pointer hover:bg-slate-50 dark:hover:bg-[#201f1f]/80 transition-colors group"
+                      >
                         <td className="py-2 px-3 font-mono text-[11px] text-slate-500 dark:text-[#cdc3d4]">
                           {formatDateTime(m.fecha_hora)}
                         </td>
@@ -1090,6 +1106,16 @@ export const KardexView: React.FC<KardexViewProps> = ({
                             )}
                           </span>
                         </td>
+                        <td className="py-2 px-2 text-center" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedMovimiento(m)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-[#26133b] dark:hover:text-[#dab9ff] transition-colors"
+                            title="Ver detalle completo de la operación"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
                       </AnimatedTableRow>
                     );
                   })}
@@ -1171,6 +1197,13 @@ export const KardexView: React.FC<KardexViewProps> = ({
         }}
         clientes={clientes}
         almacenes={almacenes}
+      />
+
+      {/* Modal Detalle de la Operación de Kardex */}
+      <KardexOperacionModal
+        isOpen={Boolean(selectedMovimiento)}
+        onClose={() => setSelectedMovimiento(null)}
+        movimiento={selectedMovimiento}
       />
     </div>
   );
