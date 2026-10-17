@@ -131,49 +131,50 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
 
       {/* Sub-Navigation Tabs */}
       <div className="flex border-b border-slate-200 dark:border-[#333333] gap-6 text-xs font-semibold">
+
         <button
-          onClick={() => setActiveTab('heatmap')}
-          className={`pb-2.5 transition-colors border-b-2 flex items-center gap-2 ${
-            activeTab === 'heatmap'
+          onClick={() => setActiveTab('reports')}
+          className={`pb-2.5 transition-colors border-b-2 flex items-center gap-2 ${activeTab === 'reports'
               ? 'border-violet-600 text-violet-700 dark:border-[#dab9ff] dark:text-[#dab9ff]'
               : 'border-transparent text-slate-500 dark:text-[#cdc3d4] hover:text-slate-900 dark:hover:text-[#e5e2e1]'
-          }`}
+            }`}
         >
-          <Grid className="w-4 h-4" />
-          <span>Mapa de Calor de Racks & Posiciones</span>
+          <FileSpreadsheet className="w-4 h-4" />
+          <span>Centro de Reportes & Exportación</span>
         </button>
+
 
         <button
           onClick={() => setActiveTab('abc')}
-          className={`pb-2.5 transition-colors border-b-2 flex items-center gap-2 ${
-            activeTab === 'abc'
+          className={`pb-2.5 transition-colors border-b-2 flex items-center gap-2 ${activeTab === 'abc'
               ? 'border-violet-600 text-violet-700 dark:border-[#dab9ff] dark:text-[#dab9ff]'
               : 'border-transparent text-slate-500 dark:text-[#cdc3d4] hover:text-slate-900 dark:hover:text-[#e5e2e1]'
-          }`}
+            }`}
         >
           <TrendingUp className="w-4 h-4" />
           <span>Rotación ABC & Auditoría de Slotting</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('reports')}
-          className={`pb-2.5 transition-colors border-b-2 flex items-center gap-2 ${
-            activeTab === 'reports'
+          onClick={() => setActiveTab('heatmap')}
+          className={`pb-2.5 transition-colors border-b-2 flex items-center gap-2 ${activeTab === 'heatmap'
               ? 'border-violet-600 text-violet-700 dark:border-[#dab9ff] dark:text-[#dab9ff]'
               : 'border-transparent text-slate-500 dark:text-[#cdc3d4] hover:text-slate-900 dark:hover:text-[#e5e2e1]'
-          }`}
+            }`}
         >
-          <FileSpreadsheet className="w-4 h-4" />
-          <span>Centro de Reportes & Exportación</span>
+          <Grid className="w-4 h-4" />
+          <span>Mapa de Calor de Racks & Posiciones</span>
         </button>
       </div>
 
       {/* Tab Panels */}
-      {activeTab === 'heatmap' && (
-        <RackHeatmap
-          almacenes={almacenes}
-          selectedAlmacenId={selectedAlmacenId}
+
+      {activeTab === 'reports' && (
+        <ExportReportsCenter
           inventario={inventario}
+          kardex={kardex}
+          clientes={clientes}
+          selectedClienteId={selectedClienteId}
         />
       )}
 
@@ -185,15 +186,14 @@ export const AnalyticsDashboard: React.FC<AnalyticsDashboardProps> = ({
           selectedClienteId={selectedClienteId}
         />
       )}
-
-      {activeTab === 'reports' && (
-        <ExportReportsCenter
+      {activeTab === 'heatmap' && (
+        <RackHeatmap
+          almacenes={almacenes}
+          selectedAlmacenId={selectedAlmacenId}
           inventario={inventario}
-          kardex={kardex}
-          clientes={clientes}
-          selectedClienteId={selectedClienteId}
         />
       )}
+
     </div>
   );
 };
