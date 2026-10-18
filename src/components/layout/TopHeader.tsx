@@ -91,6 +91,21 @@ const TAB_TITLES: Record<TabType, { title: string; subtitle: string; icon: React
     subtitle: 'Itinerario de reparto, navegación Google Maps y firma digital POD',
     icon: Truck,
   },
+  pedidos: {
+    title: '',
+    subtitle: '',
+    icon: 'symbol'
+  },
+  salidas: {
+    title: '',
+    subtitle: '',
+    icon: 'symbol'
+  },
+  rutas: {
+    title: '',
+    subtitle: '',
+    icon: 'symbol'
+  }
 };
 
 export const TopHeader: React.FC<TopHeaderProps> = ({
