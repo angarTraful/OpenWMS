@@ -11,6 +11,8 @@ import {
   QrCode,
   FileText,
   ArrowRight,
+  Printer,
+  Tag,
 } from 'lucide-react';
 import { formatM3, formatNumber } from '@/lib/utils';
 import { pedidosApi } from '@/api/pedidosApi';
@@ -37,6 +39,10 @@ export const PackingStationModal: React.FC<PackingStationModalProps> = ({
 
   const [palletSalidaLpn, setPalletSalidaLpn] = useState<string>('');
   const [totalBultos, setTotalBultos] = useState<number>(1);
+  const [cantidadPallets, setCantidadPallets] = useState<number>(1);
+  const [palletBreakdown, setPalletBreakdown] = useState<
+    Array<{ id: string; suffix: string; codigoLpn: string; bultos: number; pesoKg: number; volumenM3: number }>
+  >([]);
   const [pesoEstimadoKg, setPesoEstimadoKg] = useState<number>(0);
   const [volumenEstimadoM3, setVolumenEstimadoM3] = useState<number>(0);
 
@@ -44,6 +50,10 @@ export const PackingStationModal: React.FC<PackingStationModalProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [createdPallet, setCreatedPallet] = useState<any | null>(null);
+
+  // Modales de impresión
+  const [printPlacardOpen, setPrintPlacardOpen] = useState(false);
+  const [printCartonOpen, setPrintCartonOpen] = useState(false);
 
   // Estadio de Packing & Re-empaque (Clasificación por Tipo, Color y Temporada)
   const [clasificacionCalidad, setClasificacionCalidad] = useState<'A' | 'B' | 'C'>('A');
@@ -130,11 +140,63 @@ export const PackingStationModal: React.FC<PackingStationModalProps> = ({
         });
       }
 
-      setTotalBultos(Math.max(1, bultosCalc));
-      setPesoEstimadoKg(Math.round(pesoCalc * 1000) / 1000);
-      setVolumenEstimadoM3(Math.round(volCalc * 10000) / 10000);
+      const tBultos = Math.max(1, bultosCalc);
+      const tPeso = Math.round(pesoCalc * 1000) / 1000;
+      const tVol = Math.round(volCalc * 10000) / 10000;
+      setTotalBultos(tBultos);
+      setPesoEstimadoKg(tPeso);
+      setVolumenEstimadoM3(tVol);
+
+      // Calcular desglose inicial de pallets
+      const initialPallets = Math.max(1, Math.ceil(tBultos / 25));
+      setCantidadPallets(initialPallets);
+      recalcularDesglose(initialPallets, tBultos, palletSalidaLpn || `PLT-OUT-${new Date().getFullYear()}-${randomSuffix}`, tPeso, tVol);
     }
   }, [isOpen, pedidoDetallado]);
+
+  // Recalcular grupos de pallets proporcionalmente
+  const recalcularDesglose = (
+    numPallets: number,
+    bultosTotales: number,
+    baseLpn: string,
+    pesoTotal: number = pesoEstimadoKg,
+    volTotal: number = volumenEstimadoM3
+  ) => {
+    const n = Math.max(1, numPallets);
+    const basePerPallet = Math.floor(bultosTotales / n);
+    const newItems = Array.from({ length: n }).map((_, i) => {
+      const isLast = i === n - 1;
+      const bultosGrupo = isLast
+        ? Math.max(1, bultosTotales - basePerPallet * (n - 1))
+        : basePerPallet;
+      const suffix = n > 1 ? `/${String(i + 1).padStart(2, '0')}` : '';
+      const codigoLpn = `${baseLpn.split('/')[0]}${suffix}`;
+      const prop = bultosTotales > 0 ? bultosGrupo / bultosTotales : 1 / n;
+
+      return {
+        id: `plt-${i}`,
+        suffix: suffix || '/01',
+        codigoLpn,
+        bultos: bultosGrupo,
+        pesoKg: Math.round(pesoTotal * prop * 100) / 100,
+        volumenM3: Math.round(volTotal * prop * 1000) / 1000,
+      };
+    });
+    setPalletBreakdown(newItems);
+  };
+
+  const handleUpdateBultosPallet = (idx: number, nuevosBultos: number) => {
+    setPalletBreakdown((prev) => {
+      const copy = [...prev];
+      if (copy[idx]) {
+        copy[idx] = {
+          ...copy[idx],
+          bultos: Math.max(1, nuevosBultos),
+        };
+      }
+      return copy;
+    });
+  };
 
   // Resumen de totales de los renglones
   const resumenArticulos = useMemo(() => {
@@ -182,17 +244,32 @@ export const PackingStationModal: React.FC<PackingStationModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      const res = await pedidosApi.consolidarPalletDespacho({
-        pedidoId: pedId,
-        palletSalidaLpn: palletSalidaLpn.trim(),
-        totalBultos: Number(totalBultos),
-        pesoEstimadoKg: Number(pesoEstimadoKg),
-        volumenEstimadoM3: Number(volumenEstimadoM3),
-      });
+      // Consolidar todos los pallets LPN configurados en el desglose
+      const palletsAGuardar = palletBreakdown.length > 0
+        ? palletBreakdown
+        : [{
+            id: 'plt-0',
+            suffix: '/01',
+            codigoLpn: palletSalidaLpn.trim(),
+            bultos: Number(totalBultos),
+            pesoKg: Number(pesoEstimadoKg),
+            volumenM3: Number(volumenEstimadoM3),
+          }];
 
-      setCreatedPallet(res);
+      let ultimoRes: any = null;
+      for (const p of palletsAGuardar) {
+        ultimoRes = await pedidosApi.consolidarPalletDespacho({
+          pedidoId: pedId,
+          palletSalidaLpn: p.codigoLpn,
+          totalBultos: Number(p.bultos),
+          pesoEstimadoKg: Number(p.pesoKg),
+          volumenEstimadoM3: Number(p.volumenM3),
+        });
+      }
+
+      setCreatedPallet(ultimoRes);
       setIsSuccess(true);
-      onSuccess(res);
+      onSuccess(ultimoRes);
     } catch (err: any) {
       console.error('Error al consolidar pallet de despacho:', err);
       setErrorMsg(err.message || 'Error al guardar el paletizado de despacho.');
@@ -259,11 +336,42 @@ export const PackingStationModal: React.FC<PackingStationModalProps> = ({
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-[#e5e2e1]">
-                  ¡Pallet de Salida Consolidado Exitosamente!
+                  ¡Pallets de Salida Consolidados Exitosamente!
                 </h3>
                 <p className="text-xs text-slate-600 dark:text-[#cdc3d4] mt-1">
-                  Se generó el LPN <span className="font-mono text-emerald-700 dark:text-[#69f0ae] font-bold">{palletSalidaLpn}</span> con {totalBultos} bultos ({formatM3(volumenEstimadoM3)}).
+                  Se generaron <strong className="text-emerald-700 dark:text-[#69f0ae] font-bold">{palletBreakdown.length} pallets LPN</strong> con un total de <strong>{totalBultos} bultos</strong> ({formatM3(volumenEstimadoM3)}).
                 </p>
+              </div>
+
+              {/* Botones de Impresión Inmediata */}
+              <div className="p-4 rounded-xl bg-white dark:bg-[#151515] border border-emerald-200 dark:border-[#223329] grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-lg mx-auto text-left">
+                <button
+                  type="button"
+                  onClick={() => setPrintPlacardOpen(true)}
+                  className="p-3 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-[#2b1f0c] dark:border-[#523d18] text-amber-900 dark:text-[#ffba28] transition-all flex items-center gap-2.5 shadow-xs"
+                >
+                  <Printer className="w-5 h-5 text-amber-600 dark:text-[#ffba28] shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold block">Imprimir Rótulos de Pallet</span>
+                    <span className="text-[10px] text-slate-500 dark:text-[#aaa] block">
+                      {palletBreakdown.length} rótulos LPN para los pallets
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPrintCartonOpen(true)}
+                  className="p-3 rounded-lg border border-violet-300 bg-violet-50 hover:bg-violet-100 dark:bg-[#201330] dark:border-[#521394] text-violet-900 dark:text-[#dab9ff] transition-all flex items-center gap-2.5 shadow-xs"
+                >
+                  <Tag className="w-5 h-5 text-violet-600 dark:text-[#dab9ff] shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold block">Imprimir Etiquetas de Bultos</span>
+                    <span className="text-[10px] text-slate-500 dark:text-[#aaa] block">
+                      {totalBultos} etiquetas individuales de cajas
+                    </span>
+                  </div>
+                </button>
               </div>
 
               <div className="pt-2 flex items-center justify-center gap-3">
@@ -494,67 +602,138 @@ export const PackingStationModal: React.FC<PackingStationModalProps> = ({
 
               {/* Form Pallet LPN and Dimensions */}
               <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl bg-slate-50/80 dark:bg-[#201f1f] border border-slate-200 dark:border-[#333333]">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1.5 flex items-center gap-1.5">
-                      <QrCode className="w-3.5 h-3.5 text-amber-600 dark:text-[#ffddb8]" />
-                      Código Pallet LPN de Salida *
-                    </label>
-                    <input
-                      type="text"
-                      value={palletSalidaLpn}
-                      onChange={(e) => setPalletSalidaLpn(e.target.value)}
-                      placeholder="ej: PLT-OUT-2026-0042"
-                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm text-slate-900 dark:text-[#e5e2e1] font-mono focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-[#dab9ff]"
-                    />
-                    <span className="text-[10px] text-slate-500 dark:text-[#cdc3d4] mt-1 block">
-                      Etiqueta física adherida al pallet o caja madre de transporte.
-                    </span>
+                {/* Configuración de División en Múltiples Pallets */}
+                <div className="p-4 rounded-xl bg-slate-50/80 dark:bg-[#201f1f] border border-slate-200 dark:border-[#333333] space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1 flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-violet-600 dark:text-[#dab9ff]" />
+                        Total Bultos / Cajas *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={totalBultos}
+                        onChange={(e) => {
+                          const val = Math.max(1, parseInt(e.target.value) || 1);
+                          setTotalBultos(val);
+                          recalcularDesglose(cantidadPallets, val, palletSalidaLpn);
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm font-mono font-bold text-slate-900 dark:text-[#e5e2e1]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1 flex items-center gap-1.5">
+                        <PackageCheck className="w-3.5 h-3.5 text-amber-600 dark:text-[#ffddb8]" />
+                        Cantidad de Pallets a Consolidar *
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="30"
+                        step="1"
+                        value={cantidadPallets}
+                        onChange={(e) => {
+                          const val = Math.max(1, parseInt(e.target.value) || 1);
+                          setCantidadPallets(val);
+                          recalcularDesglose(val, totalBultos, palletSalidaLpn);
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm font-mono font-bold text-slate-900 dark:text-[#e5e2e1]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1 flex items-center gap-1.5">
+                        <QrCode className="w-3.5 h-3.5 text-emerald-600 dark:text-[#69f0ae]" />
+                        Prefijo Base Pallet LPN
+                      </label>
+                      <input
+                        type="text"
+                        value={palletSalidaLpn}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPalletSalidaLpn(val);
+                          recalcularDesglose(cantidadPallets, totalBultos, val);
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs font-mono text-slate-900 dark:text-[#e5e2e1]"
+                      />
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1.5 flex items-center gap-1.5">
-                      <Layers className="w-3.5 h-3.5 text-violet-600 dark:text-[#dab9ff]" />
-                      Total de Bultos / Cajas Consolidadas *
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={totalBultos}
-                      onChange={(e) => setTotalBultos(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm text-slate-900 dark:text-[#e5e2e1] font-mono focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-[#dab9ff]"
-                    />
+                  {/* Desglose dinámico de grupos de pallets */}
+                  <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-[#2b2b2b]">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-slate-800 dark:text-[#e5e2e1]">
+                        Distribución en {palletBreakdown.length} Pallet(s) de Salida:
+                      </span>
+                      <span className="font-mono text-xs text-slate-500 dark:text-[#aaa]">
+                        Suma bultos: <strong>{palletBreakdown.reduce((acc, p) => acc + p.bultos, 0)}</strong> / {totalBultos}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-56 overflow-y-auto">
+                      {palletBreakdown.map((p, idx) => (
+                        <div
+                          key={p.id}
+                          className="p-3 rounded-lg border border-slate-200 dark:border-[#333333] bg-white dark:bg-[#171717] space-y-1.5 shadow-xs"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 dark:bg-[#201330] dark:text-[#dab9ff] font-mono">
+                              Pallet #{idx + 1}
+                            </span>
+                            <span className="text-[10px] font-mono text-slate-400">
+                              {p.pesoKg} kg
+                            </span>
+                          </div>
+
+                          <div className="font-mono text-xs font-bold text-slate-900 dark:text-[#e5e2e1] truncate" title={p.codigoLpn}>
+                            {p.codigoLpn}
+                          </div>
+
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-[#222]">
+                            <span className="text-[11px] text-slate-600 dark:text-[#cdc3d4]">Cajas/Bultos:</span>
+                            <input
+                              type="number"
+                              min="1"
+                              value={p.bultos}
+                              onChange={(e) => handleUpdateBultosPallet(idx, parseInt(e.target.value) || 1)}
+                              className="w-16 px-2 py-0.5 text-center font-mono font-bold text-xs rounded border border-slate-300 dark:border-[#444] bg-slate-50 dark:bg-[#202020] text-slate-900 dark:text-[#e5e2e1]"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1.5 flex items-center gap-1.5">
-                      <Scale className="w-3.5 h-3.5 text-emerald-600 dark:text-[#69f0ae]" />
-                      Peso Bruto Estimado (kg)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={pesoEstimadoKg}
-                      onChange={(e) => setPesoEstimadoKg(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm text-slate-900 dark:text-[#e5e2e1] font-mono focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-[#dab9ff]"
-                    />
-                  </div>
+                  {/* Acciones de Impresión Previas */}
+                  <div className="pt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 dark:border-[#2b2b2b]">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPrintPlacardOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 dark:bg-[#2b1f0c] dark:border-[#523d18] text-amber-900 dark:text-[#ffba28] text-xs font-bold transition-all shadow-xs"
+                        title="Imprimir rótulos con código de barras para cada uno de los pallets LPN"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                        <span>Rótulos Pallet ({palletBreakdown.length} PLT)</span>
+                      </button>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1.5 flex items-center gap-1.5">
-                      <Box className="w-3.5 h-3.5 text-sky-600 dark:text-[#75d1ff]" />
-                      Volumen Ocupado (M³)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.0001"
-                      min="0"
-                      value={volumenEstimadoM3}
-                      onChange={(e) => setVolumenEstimadoM3(parseFloat(e.target.value) || 0)}
-                      className="w-full px-3 py-2 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm text-slate-900 dark:text-[#e5e2e1] font-mono focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-[#dab9ff]"
-                    />
+                      <button
+                        type="button"
+                        onClick={() => setPrintCartonOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-violet-300 bg-violet-50 hover:bg-violet-100 dark:bg-[#201330] dark:border-[#521394] text-violet-900 dark:text-[#dab9ff] text-xs font-bold transition-all shadow-xs"
+                        title="Imprimir etiquetas de bulto individuales"
+                      >
+                        <Tag className="w-3.5 h-3.5" />
+                        <span>Etiquetas Bulto ({totalBultos} etq)</span>
+                      </button>
+                    </div>
+
+                    <div className="text-[11px] font-mono text-slate-500">
+                      Peso Total: <b>{pesoEstimadoKg} kg</b> • Vol: <b>{formatM3(volumenEstimadoM3)}</b>
+                    </div>
                   </div>
                 </div>
 
@@ -591,6 +770,159 @@ export const PackingStationModal: React.FC<PackingStationModalProps> = ({
         </div>
       </div>
     </div>
+
+    {/* ========================================================================= */}
+    {/* MODAL IMPRESIÓN: RÓTULOS DE PALLET LPN (PLT-OUT-...)                      */}
+    {/* ========================================================================= */}
+    {printPlacardOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+        <div className="relative w-full max-w-2xl max-h-[90vh] bg-white dark:bg-[#1a1a1a] rounded-2xl border border-slate-200 dark:border-[#333] shadow-2xl flex flex-col overflow-hidden text-slate-900 dark:text-[#e5e2e1]">
+          <div className="p-4 border-b border-slate-200 dark:border-[#333] flex items-center justify-between bg-slate-50 dark:bg-[#202020]">
+            <div className="flex items-center gap-2">
+              <Printer className="w-5 h-5 text-amber-600" />
+              <div>
+                <h3 className="text-sm font-black uppercase">
+                  Impresión de Rótulos de Pallet LPN ({palletBreakdown.length} Pallets)
+                </h3>
+                <span className="text-[10px] text-slate-500">
+                  Formato de Placard para fijar en los pallets de despacho
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Imprimir Todos ({palletBreakdown.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrintPlacardOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-[#eee]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {palletBreakdown.map((p, idx) => (
+              <div
+                key={p.id}
+                className="p-4 rounded-xl border-2 border-dashed border-slate-300 dark:border-[#444] bg-slate-50 dark:bg-[#151515] space-y-2 font-mono"
+              >
+                <div className="flex items-center justify-between border-b pb-2 border-slate-200 dark:border-[#333]">
+                  <span className="text-xs font-black px-2 py-0.5 rounded bg-violet-600 text-white">
+                    PALLET {idx + 1} DE {palletBreakdown.length}
+                  </span>
+                  <span className="text-xs font-bold text-slate-600 dark:text-[#aaa]">
+                    PEDIDO: {currentPedido.numero_pedido}
+                  </span>
+                </div>
+
+                <div className="py-2 text-center">
+                  <span className="text-xs text-slate-400 uppercase block font-sans font-semibold">Identificador LPN</span>
+                  <span className="text-2xl font-black text-amber-700 dark:text-[#ffba28] tracking-widest block">
+                    {p.codigoLpn}
+                  </span>
+                  <span className="text-xs text-slate-500 dark:text-[#888] font-sans mt-0.5 block">
+                    ||||| | |||| ||||| || |||||| |||| | |||||
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-200 dark:border-[#333]">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-sans block">Destinatario:</span>
+                    <span className="font-bold truncate block">{currentPedido.destinatario?.razon_social}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-400 font-sans block">Bultos Consolidados:</span>
+                    <span className="text-base font-black text-emerald-600 dark:text-[#69f0ae]">{p.bultos} Cajas / Bultos</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ========================================================================= */}
+    {/* MODAL IMPRESIÓN: ETIQUETAS INDIVIDUALES DE BULTOS                         */}
+    {/* ========================================================================= */}
+    {printCartonOpen && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs">
+        <div className="relative w-full max-w-2xl max-h-[90vh] bg-white dark:bg-[#1a1a1a] rounded-2xl border border-slate-200 dark:border-[#333] shadow-2xl flex flex-col overflow-hidden text-slate-900 dark:text-[#e5e2e1]">
+          <div className="p-4 border-b border-slate-200 dark:border-[#333] flex items-center justify-between bg-slate-50 dark:bg-[#202020]">
+            <div className="flex items-center gap-2">
+              <Tag className="w-5 h-5 text-violet-600" />
+              <div>
+                <h3 className="text-sm font-black uppercase">
+                  Impresión de Etiquetas de Bultos ({totalBultos} Etiquetas)
+                </h3>
+                <span className="text-[10px] text-slate-500">
+                  Etiquetas Brother DK / adhesivas para cada una de las cajas
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-3.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Imprimir ({totalBultos} etq)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrintCartonOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-[#eee]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="p-3 bg-violet-50 dark:bg-[#201330] rounded-xl border border-violet-200 text-xs text-violet-800 dark:text-[#dab9ff] flex items-center justify-between">
+              <span>Se enviarán a la impresora térmica <b>{totalBultos} etiquetas consecutivas</b> (Bulto 1/{totalBultos} a {totalBultos}/{totalBultos}).</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {Array.from({ length: Math.min(totalBultos, 12) }).map((_, i) => (
+                <div
+                  key={i}
+                  className="p-3 rounded-lg border border-slate-200 dark:border-[#333] bg-slate-50 dark:bg-[#181818] font-mono text-xs space-y-1"
+                >
+                  <div className="flex items-center justify-between font-bold">
+                    <span>{currentPedido.numero_pedido}</span>
+                    <span className="px-1.5 py-0.2 rounded bg-slate-200 dark:bg-[#333] text-[10px]">
+                      Bto {i + 1} de {totalBultos}
+                    </span>
+                  </div>
+                  <div className="text-[11px] font-sans truncate text-slate-700 dark:text-[#ccc]">
+                    {currentPedido.destinatario?.razon_social}
+                  </div>
+                  <div className="text-[10px] text-slate-400">
+                    Ref LPN: {palletBreakdown[Math.floor(i / (totalBultos / Math.max(1, palletBreakdown.length)))]?.codigoLpn || palletSalidaLpn}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {totalBultos > 12 && (
+              <p className="text-center text-xs text-slate-500 italic">
+                ... y {totalBultos - 12} etiquetas más listas para impresión térmica.
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
   </ModalPortal>
   );
 };

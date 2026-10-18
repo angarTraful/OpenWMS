@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   X,
   Plus,
@@ -16,6 +16,7 @@ import {
   Upload,
   Truck,
   Warehouse,
+  Search,
 } from 'lucide-react';
 import { formatM3, formatNumber } from '@/lib/utils';
 import { articulosApi, Articulo, getDescripcionFull } from '@/api/articulosApi';
@@ -28,12 +29,207 @@ import { DestinatarioModal } from '@/components/masters/DestinatarioModal';
 import { ArticuloModal } from '@/components/masters/ArticuloModal';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 
-
 interface RenglonPedido {
   id: string;
   articulo_id: string;
   cantidad_solicitada: number;
 }
+
+interface ArticuloOutboundSearchPickerProps {
+  articulos: Articulo[];
+  stockResumen: Record<string, { disponible: number; reservado: number; total: number }>;
+  selectedArticuloId: string;
+  onSelect: (artId: string) => void;
+  onAddNew: () => void;
+  permitirSinStock: boolean;
+  disabled?: boolean;
+}
+
+const ArticuloOutboundSearchPicker: React.FC<ArticuloOutboundSearchPickerProps> = ({
+  articulos,
+  stockResumen,
+  selectedArticuloId,
+  onSelect,
+  onAddNew,
+  permitirSinStock,
+  disabled = false,
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  const selectedArt = useMemo(
+    () => articulos.find((a) => a.id === selectedArticuloId),
+    [articulos, selectedArticuloId]
+  );
+
+  // Filtrado reactivo por texto y disponibilidad de stock
+  const articulosFiltrados = useMemo(() => {
+    return articulos.filter((a) => {
+      const stock = stockResumen[a.id]?.disponible ?? 0;
+      if (!permitirSinStock && stock <= 0) {
+        return false;
+      }
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
+      const descFull = ((a as any).descripcion_full || getDescripcionFull(a) || a.descripcion || '').toLowerCase();
+      const nombre = (a.nombre || '').toLowerCase();
+      const barcode = (a.codigo_barras || (a as any).ean13 || '').toLowerCase();
+      return nombre.includes(q) || descFull.includes(q) || barcode.includes(q);
+    });
+  }, [articulos, stockResumen, permitirSinStock, query]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div ref={wrapperRef} className="relative w-full">
+      <div className="flex items-center gap-1.5">
+        <div className="relative flex-1 min-w-0">
+          <input
+            type="text"
+            disabled={disabled}
+            value={
+              isOpen
+                ? query
+                : selectedArt
+                ? `[${selectedArt.nombre}] ${(selectedArt as any).descripcion_full || getDescripcionFull(selectedArt) || selectedArt.descripcion || ''}`
+                : ''
+            }
+            onChange={(e) => {
+              setQuery(e.target.value);
+              if (!isOpen) setIsOpen(true);
+            }}
+            onFocus={() => {
+              setIsOpen(true);
+              setQuery('');
+            }}
+            placeholder={
+              permitirSinStock
+                ? 'Buscar por SKU o descripción (Catálogo completo)...'
+                : 'Buscar por SKU o descripción (Solo con stock)...'
+            }
+            className={`w-full pl-7 pr-6 py-1.5 text-xs rounded-lg border bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] outline-none truncate font-medium placeholder:text-slate-400 dark:placeholder:text-[#6b6471] ${
+              selectedArt
+                ? 'border-violet-300 dark:border-[#521394] focus:border-violet-500'
+                : 'border-slate-300 dark:border-[#333333] focus:border-violet-500'
+            }`}
+          />
+          <Search className="w-3.5 h-3.5 text-slate-400 dark:text-[#978d9d] absolute left-2 top-2 pointer-events-none" />
+          {selectedArticuloId && !isOpen && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect('');
+                setQuery('');
+              }}
+              className="absolute right-1.5 top-1.5 p-0.5 text-slate-400 hover:text-rose-500 dark:text-[#978d9d] dark:hover:text-[#ffb4ab] rounded"
+              title="Quitar artículo seleccionado"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onAddNew}
+          className="px-2 py-1.5 text-xs font-semibold rounded-lg bg-violet-50 hover:bg-violet-100 dark:bg-[#201330] border border-violet-200 dark:border-[#6b21a8] text-violet-700 dark:text-[#dab9ff] transition-colors shrink-0 flex items-center gap-0.5"
+          title="Crear nuevo artículo en el catálogo maestro"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline text-[10px]">Nuevo</span>
+        </button>
+      </div>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full mt-1 w-full min-w-[320px] max-w-md bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#44424a] rounded-xl shadow-2xl z-50 overflow-hidden text-xs animate-fadeIn">
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen(false);
+              onAddNew();
+            }}
+            className="w-full px-3 py-2 text-left text-xs font-bold text-violet-700 dark:text-[#dab9ff] bg-violet-50 hover:bg-violet-100 dark:bg-[#2a173d] dark:hover:bg-[#391e53] border-b border-slate-200 dark:border-[#44424a] flex items-center gap-1.5 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5 text-violet-600 dark:text-[#dab9ff]" />
+            <span>✨ + Agregar nuevo artículo al catálogo maestro...</span>
+          </button>
+
+          <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-[#2a2a2a]">
+            {articulosFiltrados.length === 0 ? (
+              <div className="p-4 text-center text-slate-400 dark:text-[#978d9d] text-xs space-y-1">
+                <p>No se encontraron artículos {permitirSinStock ? 'con ese criterio' : 'con stock disponible'}.</p>
+                {!permitirSinStock && (
+                  <p className="text-[10px] text-amber-600 dark:text-[#ffddb8] font-medium">
+                    💡 Activa el check "Plan B: Permitir sin stock" para ver el catálogo completo.
+                  </p>
+                )}
+              </div>
+            ) : (
+              articulosFiltrados.map((art) => {
+                const stock = stockResumen[art.id]?.disponible ?? 0;
+                const isSelected = art.id === selectedArticuloId;
+
+                return (
+                  <button
+                    key={art.id}
+                    type="button"
+                    onClick={() => {
+                      onSelect(art.id);
+                      setIsOpen(false);
+                      setQuery('');
+                    }}
+                    className={`w-full px-3 py-2 text-left flex items-start justify-between gap-2 hover:bg-slate-50 dark:hover:bg-[#26242a] transition-colors ${
+                      isSelected
+                        ? 'bg-violet-50 text-violet-700 dark:bg-[#2a173d]/60 dark:text-[#dab9ff]'
+                        : 'text-slate-800 dark:text-[#e5e2e1]'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-violet-700 dark:text-[#dab9ff] bg-slate-100 dark:bg-[#131313] px-1.5 py-0.2 rounded border border-slate-200 dark:border-[#333333] text-[10px] shrink-0">
+                          {art.nombre}
+                        </span>
+                        <span className="font-semibold text-xs truncate">
+                          {(art as any).descripcion_full || getDescripcionFull(art) || art.descripcion || art.nombre}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 dark:text-[#978d9d] font-mono mt-0.5">
+                        Emb: {art.unidades_por_bulto || 1} un/bulto · {formatM3(art.volumen_unitario_m3 || 0)} · {art.peso_unitario_kg || 0} kg
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 text-right">
+                      {stock > 0 ? (
+                        <span className="px-2 py-0.5 rounded font-mono font-bold text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-[#142e1d] dark:text-[#69f0ae] dark:border-[#225735]">
+                          Stock: {stock}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded font-mono font-bold text-[10px] bg-amber-50 text-amber-700 border border-amber-200 dark:bg-[#38260a] dark:text-[#ffddb8] dark:border-[#7a4c10]">
+                          Sin stock (0)
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface NuevoPedidoModalProps {
   isOpen: boolean;
@@ -84,6 +280,7 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
   const [targetRenglonId, setTargetRenglonId] = useState<string | null>(null);
 
   // UI & Submission state
+  const [permitirSinStock, setPermitirSinStock] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -101,6 +298,7 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
       setErrorMsg(null);
       setFastPasteOpen(false);
       setFastPasteFeedback(null);
+      setPermitirSinStock(false);
       setRenglones([]);
       setModalidadEntrega('envio_domicilio');
 
@@ -159,13 +357,14 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
         setArticulos(artsData || []);
         setStockResumen(stockData || {});
 
-        // Start with one line if available
-        if (artsData && artsData.length > 0) {
+        // Preseleccionar por defecto un artículo con stock disponible si existe
+        const primerConStock = (artsData || []).find((a: any) => (stockData[a.id]?.disponible ?? 0) > 0);
+        if (primerConStock) {
           setRenglones([
             {
               id: generateRowId(),
-              articulo_id: artsData[0].id,
-              cantidad_solicitada: 10,
+              articulo_id: primerConStock.id,
+              cantidad_solicitada: 1,
             },
           ]);
         } else {
@@ -286,11 +485,14 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
   // Line item handlers
   const handleAddRenglon = () => {
     if (articulos.length === 0) return;
+    const defaultArt = !permitirSinStock
+      ? (articulos.find((a) => (stockResumen[a.id]?.disponible ?? 0) > 0) || articulos[0])
+      : articulos[0];
     setRenglones([
       ...renglones,
       {
         id: generateRowId(),
-        articulo_id: articulos[0].id,
+        articulo_id: defaultArt.id,
         cantidad_solicitada: 1,
       },
     ]);
@@ -595,7 +797,20 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
                 <Box className="w-4 h-4 text-violet-600 dark:text-[#dab9ff]" />
                 Artículos Solicitados ({renglones.length})
               </h3>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Plan B toggle: Permitir sin stock */}
+                <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-[#201f1f] dark:hover:bg-[#2a2a2a] border border-slate-300 dark:border-[#333333] text-xs cursor-pointer select-none transition-colors" title="Plan B: Marcar para permitir seleccionar y cargar artículos sin stock disponible en el almacén (Backorder / Preventa)">
+                  <input
+                    type="checkbox"
+                    checked={permitirSinStock}
+                    onChange={(e) => setPermitirSinStock(e.target.checked)}
+                    className="rounded text-violet-600 focus:ring-violet-500 w-3.5 h-3.5 accent-violet-600"
+                  />
+                  <span className="text-slate-700 dark:text-[#cdc3d4] font-medium text-[11px]">
+                    Plan B: Permitir sin stock
+                  </span>
+                </label>
+
                 <button
                   type="button"
                   onClick={() => setFastPasteOpen(!fastPasteOpen)}
@@ -683,116 +898,127 @@ export const NuevoPedidoModal: React.FC<NuevoPedidoModalProps> = ({
                 </p>
               </div>
             ) : (
-              <div className="border border-slate-200 dark:border-[#333333] rounded-xl overflow-hidden shadow-xs">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-100 dark:bg-[#201f1f] text-slate-700 dark:text-[#cdc3d4] border-b border-slate-200 dark:border-[#333333]">
-                    <tr>
-                      <th className="px-4 py-2.5 font-semibold">Artículo / SKU & Stock Disponible</th>
-                      <th className="px-3 py-2.5 font-semibold text-center w-28">Cant. Solicitada</th>
-                      <th className="px-3 py-2.5 font-semibold text-right w-24">Peso Est.</th>
-                      <th className="px-3 py-2.5 font-semibold text-right w-24">Volumen</th>
-                      <th className="px-3 py-2.5 font-semibold text-center w-12"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-[#333333]">
-                    {renglones.map((r) => {
-                      const art = articulosMap.get(r.articulo_id);
-                      const subtotalPeso = art ? (r.cantidad_solicitada || 0) * (art.peso_unitario_kg || 0) : 0;
-                      const subtotalM3 = art ? (r.cantidad_solicitada || 0) * (art.volumen_unitario_m3 || 0) : 0;
-                      const stockInfo = stockResumen[r.articulo_id];
-                      const disp = stockInfo?.disponible ?? 0;
-                      const tieneFaltante = (r.cantidad_solicitada || 0) > disp;
+              <div className="space-y-3 overflow-visible pb-12">
+                {renglones.map((r, idx) => {
+                  const art = articulosMap.get(r.articulo_id);
+                  const subtotalPeso = art ? (r.cantidad_solicitada || 0) * (art.peso_unitario_kg || 0) : 0;
+                  const subtotalM3 = art ? (r.cantidad_solicitada || 0) * (art.volumen_unitario_m3 || 0) : 0;
+                  const stockInfo = stockResumen[r.articulo_id];
+                  const disp = stockInfo?.disponible ?? 0;
+                  const tieneFaltante = (r.cantidad_solicitada || 0) > disp;
 
-                      return (
-                        <tr key={r.id} className="hover:bg-slate-50 dark:hover:bg-[#201f1f]/50 transition-colors">
-                          <td className="px-4 py-2.5">
-                            <select
-                              value={r.articulo_id}
-                              onChange={(e) => {
-                                if (e.target.value === '__ADD_NEW__') {
-                                  setTargetRenglonId(r.id);
-                                  setModalArticuloOpen(true);
-                                  return;
-                                }
-                                handleUpdateRenglon(r.id, 'articulo_id', e.target.value);
-                              }}
-                              className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-xs text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500 dark:focus:border-[#dab9ff]"
-                            >
-                              <option value="__ADD_NEW__" className="text-violet-600 font-bold bg-violet-50 dark:bg-[#26133b] dark:text-[#dab9ff]">
-                                ✨ + Agregar nuevo artículo al catálogo...
-                              </option>
-                              {articulos.map((a) => (
-                                <option key={a.id} value={a.id}>
-                                  [{a.nombre}] {(a as any).descripcion_full || getDescripcionFull(a) || a.descripcion || ''} {a.unidad_medida ? `(${a.unidad_medida})` : ''}
-                                </option>
-                              ))}
-                            </select>
-
-                            {/* Stock badges and metadata */}
-                            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] font-mono">
-                              <span className={`px-2 py-0.5 rounded font-bold ${
-                                disp >= (r.cantidad_solicitada || 0)
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-[#152e1f] dark:text-[#69f0ae] dark:border-[#235836]'
-                                  : disp > 0
-                                  ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-[#3b2a10] dark:text-[#ffddb8] dark:border-[#6d4c1b]'
-                                  : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-[#381015] dark:text-[#ffb4ab] dark:border-[#690005]'
-                              }`}>
-                                Stock Disp: {disp} un.
+                  return (
+                    <div
+                      key={r.id}
+                      className="p-3.5 rounded-xl border border-slate-200 dark:border-[#333333] bg-white dark:bg-[#181717] hover:border-violet-300 dark:hover:border-[#6b21a8]/60 transition-all shadow-xs relative"
+                      style={{ zIndex: renglones.length - idx + 10 }}
+                    >
+                      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+                        {/* 1. Selector de Artículo & Buscador */}
+                        <div className="lg:col-span-6 relative">
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[10px] font-bold text-slate-500 dark:text-[#978d9d] uppercase flex items-center gap-1.5">
+                              <span className="w-4 h-4 rounded-full bg-violet-100 text-violet-700 dark:bg-[#28153c] dark:text-[#dab9ff] flex items-center justify-center text-[10px] font-mono font-black">
+                                {idx + 1}
                               </span>
+                              <span>Artículo / SKU</span>
+                            </label>
+                            {art && (
+                              <span className="text-[10px] font-mono text-slate-400 dark:text-[#888]">
+                                U.M: {art.unidad_medida || 'u'}
+                              </span>
+                            )}
+                          </div>
 
-                              {tieneFaltante && (
-                                <span className="px-2 py-0.5 rounded font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-[#3b2a10] dark:text-[#ffddb8] dark:border-[#6d4c1b] flex items-center gap-1">
-                                  ⚠️ Faltante: {(r.cantidad_solicitada || 0) - disp} un. (Backorder)
-                                </span>
-                              )}
+                          <ArticuloOutboundSearchPicker
+                            articulos={articulos}
+                            stockResumen={stockResumen}
+                            selectedArticuloId={r.articulo_id}
+                            onSelect={(artId) => handleUpdateRenglon(r.id, 'articulo_id', artId)}
+                            onAddNew={() => {
+                              setTargetRenglonId(r.id);
+                              setModalArticuloOpen(true);
+                            }}
+                            permitirSinStock={permitirSinStock}
+                          />
 
-                              {art && (
-                                <>
-                                  <span className="text-slate-500 dark:text-[#cdc3d4]">Emb: {art.unidades_por_bulto || 1} un/bulto</span>
-                                  <span className="text-slate-500 dark:text-[#cdc3d4]">Vol: {formatM3(art.volumen_unitario_m3 || 0)}</span>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <input
-                              type="number"
-                              min="1"
-                              step="1"
-                              value={r.cantidad_solicitada}
-                              onChange={(e) =>
-                                handleUpdateRenglon(
-                                  r.id,
-                                  'cantidad_solicitada',
-                                  Math.max(1, parseInt(e.target.value) || 1)
-                                )
-                              }
-                              className={`w-full px-2 py-1.5 text-center font-mono rounded-lg bg-white dark:bg-[#131313] border text-xs text-slate-900 dark:text-[#e5e2e1] focus:outline-none ${
-                                tieneFaltante ? 'border-amber-400 text-amber-600 dark:border-[#ffddb8] dark:text-[#ffddb8]' : 'border-slate-300 dark:border-[#333333] focus:border-violet-500 dark:focus:border-[#dab9ff]'
-                              }`}
-                            />
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-mono text-slate-600 dark:text-[#cdc3d4]">
-                            {formatNumber(subtotalPeso, 2)} kg
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-mono font-semibold text-sky-600 dark:text-[#75d1ff]">
-                            {formatM3(subtotalM3)}
-                          </td>
-                          <td className="px-3 py-2.5 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveRenglon(r.id)}
-                              className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:text-[#cdc3d4] dark:hover:text-[#ffb4ab] dark:hover:bg-[#381015] transition-colors"
-                              title="Eliminar renglón"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          {/* Stock badges and metadata */}
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] font-mono">
+                            <span className={`px-2 py-0.5 rounded font-bold ${
+                              disp >= (r.cantidad_solicitada || 0)
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-[#152e1f] dark:text-[#69f0ae] dark:border-[#235836]'
+                                : disp > 0
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-[#3b2a10] dark:text-[#ffddb8] dark:border-[#6d4c1b]'
+                                : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-[#381015] dark:text-[#ffb4ab] dark:border-[#690005]'
+                            }`}>
+                              Stock Disp: {disp} un.
+                            </span>
+
+                            {tieneFaltante && (
+                              <span className="px-2 py-0.5 rounded font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-[#3b2a10] dark:text-[#ffddb8] dark:border-[#6d4c1b] flex items-center gap-1">
+                                ⚠️ Faltante: {(r.cantidad_solicitada || 0) - disp} un. (Backorder)
+                              </span>
+                            )}
+
+                            {art && (
+                              <>
+                                <span className="text-slate-500 dark:text-[#cdc3d4]">Emb: {art.unidades_por_bulto || 1} un/bulto</span>
+                                <span className="text-slate-500 dark:text-[#cdc3d4]">Vol: {formatM3(art.volumen_unitario_m3 || 0)}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 2. Cantidad Solicitada */}
+                        <div className="lg:col-span-2">
+                          <label className="text-[10px] font-bold text-slate-500 dark:text-[#978d9d] uppercase mb-1 block text-center">
+                            Cant. Solicitada
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={r.cantidad_solicitada}
+                            onChange={(e) =>
+                              handleUpdateRenglon(
+                                r.id,
+                                'cantidad_solicitada',
+                                Math.max(1, parseInt(e.target.value) || 1)
+                              )
+                            }
+                            className={`w-full px-3 py-1.5 text-center font-mono font-bold rounded-lg bg-white dark:bg-[#131313] border text-xs text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:ring-2 focus:ring-violet-500/20 ${
+                              tieneFaltante ? 'border-amber-400 text-amber-600 dark:border-[#ffddb8] dark:text-[#ffddb8]' : 'border-slate-300 dark:border-[#333333] focus:border-violet-500 dark:focus:border-[#dab9ff]'
+                            }`}
+                          />
+                        </div>
+
+                        {/* 3. Subtotales Peso y Volumen */}
+                        <div className="lg:col-span-3 flex items-center justify-between sm:justify-around gap-2 px-3 py-2 rounded-lg bg-slate-50 dark:bg-[#201f1f] border border-slate-200 dark:border-[#2f2f2f] text-[11px] font-mono">
+                          <div>
+                            <span className="text-[9px] text-slate-400 dark:text-[#888] block uppercase">Peso Est.</span>
+                            <span className="font-semibold text-slate-700 dark:text-[#cdc3d4]">{formatNumber(subtotalPeso, 2)} kg</span>
+                          </div>
+                          <div className="border-l border-slate-200 dark:border-[#333] pl-2.5">
+                            <span className="text-[9px] text-slate-400 dark:text-[#888] block uppercase">Volumen</span>
+                            <span className="font-bold text-sky-600 dark:text-[#75d1ff]">{formatM3(subtotalM3)}</span>
+                          </div>
+                        </div>
+
+                        {/* 4. Botón Eliminar */}
+                        <div className="lg:col-span-1 text-right lg:text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveRenglon(r.id)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:text-[#cdc3d4] dark:hover:text-[#ffb4ab] dark:hover:bg-[#381015] transition-colors"
+                            title="Eliminar renglón"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

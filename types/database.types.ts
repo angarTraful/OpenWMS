@@ -1179,6 +1179,16 @@ export type Database = {
           observaciones: string | null
           orden_compra_cliente: string | null
           prioridad: Database["public"]["Enums"]["prioridad_pedido_enum"]
+          control_muestreo_completado?: boolean | null
+          control_muestreo_fecha?: string | null
+          control_muestreo_usuario?: string | null
+          control_muestreo_resultado?: string | null
+          pedido_padre_id?: string | null
+          es_parcializado?: boolean | null
+          estrategia_alocacion?: string | null
+          operador_picking_id?: string | null
+          supervisor_picking_id?: string | null
+          controller_picking_id?: string | null
         }
         Insert: {
           actualizado_en?: string
@@ -1195,6 +1205,16 @@ export type Database = {
           observaciones?: string | null
           orden_compra_cliente?: string | null
           prioridad?: Database["public"]["Enums"]["prioridad_pedido_enum"]
+          control_muestreo_completado?: boolean | null
+          control_muestreo_fecha?: string | null
+          control_muestreo_usuario?: string | null
+          control_muestreo_resultado?: string | null
+          pedido_padre_id?: string | null
+          es_parcializado?: boolean | null
+          estrategia_alocacion?: string | null
+          operador_picking_id?: string | null
+          supervisor_picking_id?: string | null
+          controller_picking_id?: string | null
         }
         Update: {
           actualizado_en?: string
@@ -1211,6 +1231,16 @@ export type Database = {
           observaciones?: string | null
           orden_compra_cliente?: string | null
           prioridad?: Database["public"]["Enums"]["prioridad_pedido_enum"]
+          control_muestreo_completado?: boolean | null
+          control_muestreo_fecha?: string | null
+          control_muestreo_usuario?: string | null
+          control_muestreo_resultado?: string | null
+          pedido_padre_id?: string | null
+          es_parcializado?: boolean | null
+          estrategia_alocacion?: string | null
+          operador_picking_id?: string | null
+          supervisor_picking_id?: string | null
+          controller_picking_id?: string | null
         }
         Relationships: [
           {
@@ -1443,6 +1473,15 @@ export type Database = {
           tipo_vehiculo: string | null
           transporte_empresa: string
           vehiculo_patente: string
+          acompanante_nombre?: string | null
+          acompanante_documento?: string | null
+          control_carga_completado?: boolean | null
+          control_carga_fecha?: string | null
+          control_carga_usuario?: string | null
+          control_carga_precinto?: string | null
+          km_estimados?: number | null
+          km_reales?: number | null
+          notas_viaje?: string | null
         }
         Insert: {
           chofer_documento?: string | null
@@ -1458,6 +1497,15 @@ export type Database = {
           tipo_vehiculo?: string | null
           transporte_empresa: string
           vehiculo_patente: string
+          acompanante_nombre?: string | null
+          acompanante_documento?: string | null
+          control_carga_completado?: boolean | null
+          control_carga_fecha?: string | null
+          control_carga_usuario?: string | null
+          control_carga_precinto?: string | null
+          km_estimados?: number | null
+          km_reales?: number | null
+          notas_viaje?: string | null
         }
         Update: {
           chofer_documento?: string | null
@@ -1473,6 +1521,15 @@ export type Database = {
           tipo_vehiculo?: string | null
           transporte_empresa?: string
           vehiculo_patente?: string
+          acompanante_nombre?: string | null
+          acompanante_documento?: string | null
+          control_carga_completado?: boolean | null
+          control_carga_fecha?: string | null
+          control_carga_usuario?: string | null
+          control_carga_precinto?: string | null
+          km_estimados?: number | null
+          km_reales?: number | null
+          notas_viaje?: string | null
         }
         Relationships: [
           {
@@ -1496,6 +1553,13 @@ export type Database = {
           remito_id: string | null
           ruta_id: string
           secuencia_parada: number
+          receptor_nombre?: string | null
+          receptor_documento?: string | null
+          firma_digital?: string | null
+          motivo_novedad?: string | null
+          foto_remito_url?: string | null
+          latitud_entrega?: number | null
+          longitud_entrega?: number | null
         }
         Insert: {
           destinatario_id: string
@@ -1508,6 +1572,13 @@ export type Database = {
           remito_id?: string | null
           ruta_id: string
           secuencia_parada: number
+          receptor_nombre?: string | null
+          receptor_documento?: string | null
+          firma_digital?: string | null
+          motivo_novedad?: string | null
+          foto_remito_url?: string | null
+          latitud_entrega?: number | null
+          longitud_entrega?: number | null
         }
         Update: {
           destinatario_id?: string
@@ -1520,6 +1591,13 @@ export type Database = {
           remito_id?: string | null
           ruta_id?: string
           secuencia_parada?: number
+          receptor_nombre?: string | null
+          receptor_documento?: string | null
+          firma_digital?: string | null
+          motivo_novedad?: string | null
+          foto_remito_url?: string | null
+          latitud_entrega?: number | null
+          longitud_entrega?: number | null
         }
         Relationships: [
           {
@@ -2119,7 +2197,10 @@ export type Database = {
         Args: { p_liquidacion_id: string; p_usuario_id?: string }
         Returns: Json
       }
-      wms_asignar_picking_fefo: { Args: { p_pedido_id: string }; Returns: Json }
+      wms_asignar_picking_fefo: {
+        Args: { p_pedido_id: string; p_estrategia?: string }
+        Returns: Json
+      }
       wms_confirmar_picking: {
         Args: { p_cantidad_recolectada: number; p_tarea_picking_id: string }
         Returns: Json
@@ -2173,10 +2254,11 @@ export type Database = {
       }
       wms_emitir_remito_rx: {
         Args: {
-          p_cae?: string
-          p_numero_remito_rx: string
-          p_orden_salida_id?: string
           p_pedido_id: string
+          p_numero_remito_rx: string
+          p_cae?: string | null
+          p_orden_salida_id?: string | null
+          p_valor_declarado_total?: number | null
         }
         Returns: Json
       }
@@ -2275,6 +2357,8 @@ export type Database = {
         | "en_carga"
         | "en_viaje"
         | "itinerario_cumplido"
+        | "suspendida"
+        | "cancelada"
       prioridad_pedido_enum: "baja" | "normal" | "urgente"
       rotacion_abc_enum: "A" | "B" | "C"
       tipo_movimiento_enum:
@@ -2473,6 +2557,8 @@ export const Constants = {
         "en_carga",
         "en_viaje",
         "itinerario_cumplido",
+        "suspendida",
+        "cancelada",
       ],
       prioridad_pedido_enum: ["baja", "normal", "urgente"],
       rotacion_abc_enum: ["A", "B", "C"],

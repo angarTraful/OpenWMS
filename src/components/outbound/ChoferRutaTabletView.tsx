@@ -37,14 +37,13 @@ import {
   normalizarUrlGoogleDrive,
   obtenerUrlVisorGoogleDrive,
 } from '@/lib/googleDriveService';
+import { ControlCargaModal } from './ControlCargaModal';
 
 interface ChoferRutaTabletViewProps {
   initialRutaId?: string;
   onBack?: () => void;
   almacenes?: any[];
 }
-
-
 
 export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
   initialRutaId,
@@ -58,6 +57,9 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
   const [updating, setUpdating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Modal Control de Carga en Muelle
+  const [controlCargaModalOpen, setControlCargaModalOpen] = useState(false);
 
   // Modales de acción por parada
   const [paradaParaEntrega, setParadaParaEntrega] = useState<any | null>(null);
@@ -85,16 +87,40 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
   const [fotoAdjuntoBase64, setFotoAdjuntoBase64] = useState<string | null>(null);
   const [obsAdjunto, setObsAdjunto] = useState('');
 
-  // 1. Cargar lista de rutas activas
+  // Helper para captura asíncrona de geoposición GPS
+  const capturarGpsActual = async (): Promise<{ lat: number | null; lng: number | null }> => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      return { lat: null, lng: null };
+    }
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          });
+        },
+        (err) => {
+          console.warn('GPS no disponible o denegado por el dispositivo:', err);
+          resolve({ lat: null, lng: null });
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+      );
+    });
+  };
+
+  // 1. Cargar lista de rutas activas (ocultar finalizadas para el chofer en la tablet)
   const cargarRutas = async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
       const data = await despachosApi.listarRutasConParadas();
-      setRutasDisponibles(data || []);
+      // Filtrar solo rutas nuevas o en curso (programada, en_carga, en_viaje)
+      const rutasActivas = (data || []).filter((r: any) => r.estado !== 'itinerario_cumplido');
+      setRutasDisponibles(rutasActivas);
 
-      if (!selectedRutaId && data && data.length > 0) {
-        const activa = data.find((r: any) => r.estado === 'en_viaje') || data[0];
+      if (!selectedRutaId && rutasActivas.length > 0) {
+        const activa = rutasActivas.find((r: any) => r.estado === 'en_viaje') || rutasActivas[0];
         setSelectedRutaId(activa.id);
       }
     } catch (err: any) {
@@ -249,6 +275,9 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
         finalFotoUrl = uploadRes.url;
       }
 
+      // Capturar geoposición GPS de la entrega
+      const { lat, lng } = await capturarGpsActual();
+
       await despachosApi.registrarEntregaParada({
         paradaId: paradaParaEntrega.id,
         rutaId: selectedRutaId,
@@ -259,13 +288,15 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
         firmaDigital: firmaBase64,
         fotoRemitoUrl: finalFotoUrl,
         observaciones: obsEntrega.trim() || undefined,
+        latitudEntrega: lat,
+        longitudEntrega: lng,
       });
 
       rfSoundService.playSuccess();
       setSuccessMsg(
         `¡Parada #${paradaParaEntrega.secuencia_parada} entregada conforme a ${
           receptorNombre || paradaParaEntrega.destinatario?.razon_social
-        }! Documento guardado.`
+        }! Documento y geoposición guardados.`
       );
       setParadaParaEntrega(null);
       setReceptorNombre('');
@@ -313,6 +344,9 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
         finalFotoUrl = uploadRes.url;
       }
 
+      // Capturar geoposición GPS del desvío
+      const { lat, lng } = await capturarGpsActual();
+
       await despachosApi.registrarEntregaParada({
         paradaId: paradaParaNovedad.id,
         rutaId: selectedRutaId,
@@ -321,6 +355,8 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
         motivoNovedad: motivoTexto,
         fotoRemitoUrl: finalFotoUrl,
         observaciones: obsNovedad.trim() || undefined,
+        latitudEntrega: lat,
+        longitudEntrega: lng,
       });
 
       rfSoundService.playError();
@@ -391,6 +427,24 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
     nuevoEstado: 'programada' | 'en_carga' | 'en_viaje' | 'itinerario_cumplido'
   ) => {
     if (!selectedRutaId) return;
+
+    // Validación Item 1: Si se inicia el viaje ('en_viaje'), validar que todas las paradas tengan Remito Rx emitido
+    if (nuevoEstado === 'en_viaje') {
+      const paradasSinRemito = (rutaData?.paradas || []).filter(
+        (p: any) => !p.remito_id && !p.remito?.numero_remito_rx
+      );
+      if (paradasSinRemito.length > 0) {
+        const pedNums = paradasSinRemito
+          .map((p: any) => p.pedido?.numero_pedido || `Parada #${p.secuencia_parada}`)
+          .join(', ');
+        alert(
+          `⛔ NO SE PUEDE INICIAR LA RUTA:\n\nHay ${paradasSinRemito.length} pedido(s) sin Remito Rx emitido:\n[${pedNums}].\n\nDebe emitirse el Remito Rx para cada pedido antes de iniciar el recorrido.`
+        );
+        setErrorMsg(`Bloqueado: Existen pedidos sin Remito Rx emitido (${pedNums}).`);
+        return;
+      }
+    }
+
     setUpdating(true);
     try {
       await despachosApi.actualizarEstadoRuta(selectedRutaId, nuevoEstado);
@@ -421,6 +475,15 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
     rutaData?.paradas?.filter((p: any) => p.estado_entrega === 'con_novedad').length || 0;
   const paradasPendientes = totalParadas - paradasEntregadas - paradasConNovedad;
   const porcentajeAvance = totalParadas > 0 ? Math.round((paradasEntregadas / totalParadas) * 100) : 0;
+
+  // Primera parada pendiente secuencial (en turno actual de entrega)
+  const primeraParadaPendiente = (rutaData?.paradas || []).find(
+    (p: any) => p.estado_entrega !== 'entregado' && p.estado_entrega !== 'con_novedad'
+  );
+  const primeraParadaPendienteId = primeraParadaPendiente?.id;
+  const paradasSinRemitoCount = (rutaData?.paradas || []).filter(
+    (p: any) => !p.remito_id && !p.remito?.numero_remito_rx
+  ).length;
 
   // URL Google Maps para el viaje completo
   const googleMapsUrlCompleta = rutaData?.paradas
@@ -631,43 +694,164 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
             </div>
           )}
 
-          {/* Botones de Control de Estado del Viaje */}
+          {/* Botones de Control de Estado del Viaje y Control de Carga */}
           {rutaData && (
-            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200 dark:border-[#262626]">
-              {rutaData.estado === 'programada' && (
-                <button
-                  type="button"
-                  onClick={() => handleCambiarEstadoRuta('en_viaje')}
-                  disabled={updating}
-                  className="flex-1 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-[#69f0ae] dark:hover:bg-[#8bf4c1] dark:text-[#00391d] font-black text-sm uppercase tracking-wide flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98]"
-                >
-                  <Truck className="w-5 h-5" />
-                  <span>Iniciar Viaje (Salir a Reparto)</span>
-                </button>
+            <div className="flex flex-col gap-2 pt-2 border-t border-slate-200 dark:border-[#262626]">
+              {/* 1. RUTA NO INICIADA (PROGRAMADA, EN CARGA O SUSPENDIDA) */}
+              {rutaData.estado !== 'en_viaje' && rutaData.estado !== 'itinerario_cumplido' && (
+                <div className="space-y-2">
+                  {rutaData.estado === 'suspendida' && (
+                    <div className="p-3 rounded-xl bg-rose-50 text-rose-700 border border-rose-300 dark:bg-[#381015] dark:text-[#ffb4ab] dark:border-[#690005] text-xs font-bold flex items-center justify-between gap-2 shadow-xs">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600 dark:text-[#ffb4ab]" />
+                        <span>Ruta Suspendida: {rutaData.motivo_suspension || 'Detenida por supervisión'}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {paradasSinRemitoCount > 0 && (
+                    <div className="p-2.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-300 dark:bg-[#381015] dark:text-[#ffb4ab] dark:border-[#690005] text-xs font-bold flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600 dark:text-[#ffb4ab]" />
+                      <span>
+                        Atención: Hay {paradasSinRemitoCount} pedido(s) sin Remito Rx emitido. Debe emitirse el remito antes de poder iniciar el viaje.
+                      </span>
+                    </div>
+                  )}
+
+                  {!rutaData.control_carga_completado ? (
+                    <div className="p-3 rounded-xl bg-amber-50 dark:bg-[#2b1e0b] border border-amber-200 dark:border-[#523914] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center shrink-0">
+                          <Package className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <span className="font-bold text-amber-900 dark:text-[#ffddb8] block text-xs">
+                            Paso Previo Requerido: Control de Carga en Muelle
+                          </span>
+                          <span className="text-[11px] text-amber-700 dark:text-[#ffba28]">
+                            Debe verificar bultos, remitos y precinto antes de habilitar la salida.
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setControlCargaModalOpen(true)}
+                        className="py-2 px-3.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs uppercase tracking-wide flex items-center justify-center gap-2 shadow-xs transition-all active:scale-95"
+                      >
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>Realizar Control de Carga</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-[#102a1e] border border-emerald-200 dark:border-[#1d523b] flex items-center justify-between text-xs font-mono">
+                      <span className="text-emerald-800 dark:text-[#69f0ae] font-bold flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4" />
+                        Carga verificada en muelle (Precinto: {rutaData.control_carga_precinto || 'Conforme'})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setControlCargaModalOpen(true)}
+                        className="text-[11px] font-bold text-emerald-700 dark:text-[#69f0ae] underline"
+                      >
+                        Ver / Editar
+                      </button>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (paradasSinRemitoCount > 0) {
+                        alert(
+                          `⛔ NO SE PUEDE INICIAR LA RUTA:\n\nHay ${paradasSinRemitoCount} pedido(s) sin Remito Rx emitido.\n\nDebe emitirse el remito correspondiente para cada pedido antes de salir a reparto.`
+                        );
+                        return;
+                      }
+                      if (!rutaData.control_carga_completado) {
+                        const abrir = window.confirm(
+                          '⚠️ Aún no se ha realizado el Control de Carga en Muelle.\n\n¿Deseas realizar el control de carga ahora antes de iniciar?'
+                        );
+                        if (abrir) setControlCargaModalOpen(true);
+                        return;
+                      }
+                      handleCambiarEstadoRuta('en_viaje');
+                    }}
+                    disabled={updating || paradasSinRemitoCount > 0}
+                    className={`w-full py-3.5 px-4 rounded-xl font-black text-sm uppercase tracking-wide flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98] ${
+                      paradasSinRemitoCount > 0
+                        ? 'bg-slate-200 text-slate-400 dark:bg-[#252525] dark:text-[#666] cursor-not-allowed border border-slate-300 dark:border-[#333]'
+                        : rutaData.control_carga_completado
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-[#69f0ae] dark:hover:bg-[#8bf4c1] dark:text-[#00391d]'
+                        : 'bg-amber-600 hover:bg-amber-700 text-white dark:bg-[#ffba28] dark:text-[#2b1c09]'
+                    }`}
+                    title={
+                      paradasSinRemitoCount > 0
+                        ? 'Bloqueado: Hay pedidos sin Remito Rx emitido'
+                        : !rutaData.control_carga_completado
+                        ? 'Requiere Control de Carga en Muelle'
+                        : 'Iniciar el viaje y salir a reparto'
+                    }
+                  >
+                    <Truck className="w-5 h-5" />
+                    <span>
+                      {paradasSinRemitoCount > 0
+                        ? 'Iniciar Viaje (Bloqueado: Faltan Remitos Rx)'
+                        : rutaData.control_carga_completado
+                        ? 'Iniciar Recorrido (Salir a Reparto)'
+                        : 'Iniciar Viaje (Requiere Control de Carga)'}
+                    </span>
+                  </button>
+                </div>
               )}
 
+              {/* 2. RUTA EN VIAJE */}
               {rutaData.estado === 'en_viaje' && (
                 <button
                   type="button"
                   onClick={() => {
-                    if (
-                      paradasPendientes > 0 &&
-                      !window.confirm(
-                        `Todavía quedan ${paradasPendientes} paradas pendientes. ¿Confirmas finalizar el itinerario?`
-                      )
-                    ) {
+                    // Validación 1: El chofer no puede finalizar sin que todas las paradas estén entregadas o con novedad
+                    if (paradasPendientes > 0) {
+                      alert(
+                        `⛔ ACCIÓN DENEGADA:\n\nNo puedes finalizar el recorrido. Todavía quedan ${paradasPendientes} parada(s) pendientes de entrega.\n\nCada parada debe estar registrada con Entrega Conforme o con Novedad/Desvío Asentado.`
+                      );
                       return;
                     }
+
+                    // Validación 2: Verificar si hay remitos entregados sin foto digital de POD
+                    const paradasSinFoto = (rutaData.paradas || []).filter(
+                      (p: any) => p.estado_entrega === 'entregado' && !p.foto_remito_url
+                    );
+
+                    if (paradasSinFoto.length > 0) {
+                      if (
+                        !window.confirm(
+                          `⚠️ ALERTA DE CONFORMES (1 de 2):\n\nSe detectaron ${paradasSinFoto.length} parada(s) entregadas sin la foto del remito conformado subida.\n\n¿Deseas continuar hacia el cierre del viaje?`
+                        )
+                      ) {
+                        return;
+                      }
+
+                      if (
+                        !window.confirm(
+                          `⚠️ CONFIRMACIÓN DE RETORNO AL DEPÓSITO (2 de 2):\n\n¿Ya estás en el depósito central y confirmas que entregas los remitos firmados físicamente en mano a la administración/guardia?`
+                        )
+                      ) {
+                        return;
+                      }
+                    }
+
                     handleCambiarEstadoRuta('itinerario_cumplido');
                   }}
                   disabled={updating}
-                  className="flex-1 py-3 px-4 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-2 border-emerald-500 dark:bg-[#143d2c] dark:hover:bg-[#1a4f38] dark:text-[#69f0ae] dark:border-[#2b664d] font-black text-sm uppercase tracking-wide flex items-center justify-center gap-2 shadow-xs transition-all active:scale-[0.98]"
+                  className="w-full py-3 px-4 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-2 border-emerald-500 dark:bg-[#143d2c] dark:hover:bg-[#1a4f38] dark:text-[#69f0ae] dark:border-[#2b664d] font-black text-sm uppercase tracking-wide flex items-center justify-center gap-2 shadow-xs transition-all active:scale-[0.98]"
                 >
                   <CheckCircle2 className="w-5 h-5" />
                   <span>Finalizar Hoja de Ruta (Retorno al Almacén)</span>
                 </button>
               )}
 
+              {/* 3. ITINERARIO CUMPLIDO */}
               {rutaData.estado === 'itinerario_cumplido' && (
                 <div className="w-full py-2.5 px-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 dark:bg-[#092418] dark:border-[#1b5037] dark:text-[#69f0ae] text-xs font-bold text-center flex items-center justify-center gap-2">
                   <CheckCircle2 className="w-4 h-4" />
@@ -718,6 +902,8 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
                 const isEntregado = parada.estado_entrega === 'entregado';
                 const isNovedad = parada.estado_entrega === 'con_novedad';
                 const isCerrada = isEntregado || isNovedad;
+                const isParadaActual = parada.id === primeraParadaPendienteId;
+                const puedeEntregar = rutaData?.estado === 'en_viaje' && isParadaActual;
 
                 const dest = parada.destinatario;
                 const pedido = parada.pedido;
@@ -866,6 +1052,12 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
                             Peso: <strong className="text-slate-900 dark:text-[#e5e2e1]">{formatNumber(remito.peso_total_kg, 2)} kg</strong>
                           </span>
                         )}
+                        {parada.latitud_entrega && parada.longitud_entrega && (
+                          <span className="text-emerald-700 dark:text-[#69f0ae] flex items-center gap-1 font-bold">
+                            <MapPin className="w-3.5 h-3.5" />
+                            GPS: {Number(parada.latitud_entrega).toFixed(5)}, {Number(parada.longitud_entrega).toFixed(5)}
+                          </span>
+                        )}
                       </div>
 
                       {/* Documento adjunto si existe */}
@@ -948,20 +1140,40 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
 
                       {/* 2. Botón Marcar Entregado (o Adjuntar Documentación si ya está entregado) */}
                       {!isCerrada ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setParadaParaEntrega(parada);
-                            setReceptorNombre(dest?.contacto_recepcion || dest?.razon_social || '');
-                            setReceptorDni('');
-                            setObsEntrega('');
-                            setFotoRemitoBase64(null);
-                          }}
-                          className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-[#69f0ae] dark:hover:bg-[#8bf4c1] dark:text-[#00391d] font-black text-xs uppercase tracking-wide flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.98]"
-                        >
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>Marcar Entregado</span>
-                        </button>
+                        puedeEntregar ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setParadaParaEntrega(parada);
+                              setReceptorNombre(dest?.contacto_recepcion || dest?.razon_social || '');
+                              setReceptorDni('');
+                              setObsEntrega('');
+                              setFotoRemitoBase64(null);
+                            }}
+                            className="py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-[#69f0ae] dark:hover:bg-[#8bf4c1] dark:text-[#00391d] font-black text-xs uppercase tracking-wide flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.98]"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Marcar Entregado</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            className="py-3 px-4 rounded-xl bg-slate-100 text-slate-400 dark:bg-[#201f1f] dark:text-[#666] border border-slate-200 dark:border-[#333] font-bold text-xs uppercase cursor-not-allowed flex items-center justify-center gap-2"
+                            title={
+                              rutaData?.estado !== 'en_viaje'
+                                ? 'Debe iniciar la hoja de ruta para habilitar las entregas'
+                                : 'Debe completar primero la parada anterior en curso'
+                            }
+                          >
+                            <Clock className="w-4 h-4" />
+                            <span>
+                              {rutaData?.estado !== 'en_viaje'
+                                ? 'Ruta no iniciada'
+                                : `En espera (Parada #${parada.secuencia_parada})`}
+                            </span>
+                          </button>
+                        )
                       ) : (
                         <button
                           type="button"
@@ -981,21 +1193,27 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
 
                       {/* 3. Botón Reportar Novedad / Desvío (Solo si no está entregada) */}
                       {!isCerrada ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setParadaParaNovedad(parada);
-                            setMotivoNovedad('Faltante de bultos');
-                            setBultosEsperados(remito?.total_bultos || 1);
-                            setBultosEntregados(0);
-                            setObsNovedad('');
-                            setFotoNovedadBase64(null);
-                          }}
-                          className="py-3 px-3 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 dark:bg-[#221f1f] dark:hover:bg-[#2e2b2b] dark:text-[#cdc3d4] dark:border-[#3b3b3b] font-bold text-xs uppercase tracking-wide flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-                        >
-                          <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-[#ffba28]" />
-                          <span>Reportar Novedad</span>
-                        </button>
+                        puedeEntregar ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setParadaParaNovedad(parada);
+                              setMotivoNovedad('Faltante de bultos');
+                              setBultosEsperados(remito?.total_bultos || 1);
+                              setBultosEntregados(0);
+                              setObsNovedad('');
+                              setFotoNovedadBase64(null);
+                            }}
+                            className="py-3 px-3 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 dark:bg-[#221f1f] dark:hover:bg-[#2e2b2b] dark:text-[#cdc3d4] dark:border-[#3b3b3b] font-bold text-xs uppercase tracking-wide flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+                          >
+                            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-[#ffba28]" />
+                            <span>Reportar Novedad</span>
+                          </button>
+                        ) : (
+                          <div className="flex items-center justify-center py-2 text-[11px] text-slate-400 dark:text-[#666] font-mono">
+                            Secuencia en espera
+                          </div>
+                        )
                       ) : (
                         <div className="flex items-center justify-center py-2 text-[11px] text-slate-500 dark:text-[#978d9d] font-mono">
                           ✓ Parada cerrada
@@ -1541,6 +1759,25 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
             </div>
           </div>
         </ModalPortal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 8. MODAL CONTROL DE CARGA EN MUELLE (DOCK CHECKLIST)                      */}
+      {/* ========================================================================= */}
+      {controlCargaModalOpen && rutaData && (
+        <ControlCargaModal
+          isOpen={controlCargaModalOpen}
+          onClose={() => setControlCargaModalOpen(false)}
+          ruta={rutaData}
+          usuarioDefault={rutaData.chofer_nombre || ''}
+          onSuccess={async () => {
+            setSuccessMsg('¡Control de carga en muelle verificado y aprobado! Salida a reparto habilitada.');
+            if (selectedRutaId) {
+              await cargarDetalleRuta(selectedRutaId);
+              await cargarRutas();
+            }
+          }}
+        />
       )}
     </div>
   );

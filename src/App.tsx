@@ -89,6 +89,36 @@ export function App() {
   const [choferSelectedRutaId, setChoferSelectedRutaId] = useState<string | null>(null);
   const [isImportMovimientosOpen, setIsImportMovimientosOpen] = useState(false);
 
+  // Standalone Mobile / Tablet App detection (para compilar directo APK e iOS sin menús ni cabeceras)
+  const standaloneApp = useMemo(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const appParam = (searchParams.get('app') || searchParams.get('view') || searchParams.get('mode') || '').toLowerCase();
+      if (['chofer', 'driver', 'reparto', 'entrega'].includes(appParam)) return 'chofer';
+      if (['rf', 'terminal', 'scanner', 'pistola'].includes(appParam)) return 'rf';
+
+      const hash = window.location.hash.toLowerCase();
+      if (hash.includes('chofer') || hash.includes('driver')) return 'chofer';
+      if (hash.includes('rf') || hash.includes('scanner') || hash.includes('terminal')) return 'rf';
+
+      const pathname = window.location.pathname.toLowerCase();
+      if (pathname.endsWith('/chofer') || pathname.endsWith('/driver')) return 'chofer';
+      if (pathname.endsWith('/rf') || pathname.endsWith('/terminal')) return 'rf';
+    } catch {}
+    return null;
+  }, []);
+
+  // Leer rutaId desde URL si viene especificado para deep-linking
+  useEffect(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlRutaId = searchParams.get('rutaId') || searchParams.get('ruta_id');
+      if (urlRutaId) {
+        setChoferSelectedRutaId(urlRutaId);
+      }
+    } catch {}
+  }, []);
+
   // Operational Data
   const [inventario, setInventario] = useState<any[]>([]);
   const [recepciones, setRecepciones] = useState<any[]>([]);
@@ -228,6 +258,36 @@ export function App() {
       remitosEmitidos: remEmit,
     };
   }, [recepciones, pedidos, ordenesSalida]);
+
+  // Si estamos en modo Aplicación Móvil / Tablet Standalone (APK / iOS / Terminal RF)
+  // renderizamos directamente la vista a pantalla completa sin barra de navegación ni cabecera.
+  if (standaloneApp === 'chofer') {
+    return (
+      <div className="h-[100dvh] w-screen overflow-hidden bg-[#131313] text-[#e5e2e1]">
+        <ChoferRutaTabletView
+          initialRutaId={choferSelectedRutaId || undefined}
+          onBack={() => {
+            setChoferSelectedRutaId(null);
+          }}
+          almacenes={almacenes}
+        />
+      </div>
+    );
+  }
+
+  if (standaloneApp === 'rf') {
+    return (
+      <div className="h-[100dvh] w-screen overflow-hidden bg-[#131313] text-[#e5e2e1]">
+        <RfTerminalView
+          almacenes={almacenes}
+          selectedAlmacenId={selectedAlmacenId}
+          onExitTerminal={() => {
+            window.location.href = window.location.pathname;
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f8fafc] dark:bg-[#131313] text-[#0f172a] dark:text-[#e5e2e1] flex selection:bg-purple-500/25 selection:text-purple-700 dark:selection:bg-[#dab9ff]/25 dark:selection:text-[#dab9ff] transition-colors duration-200">
@@ -430,7 +490,7 @@ export function App() {
               />
             )}
 
-            {currentTab === 'outbound' && (
+            {(currentTab === 'outbound' || currentTab === 'pedidos' || currentTab === 'salidas' || currentTab === 'rutas') && (
               <OutboundMonitor
                 pedidos={pedidos}
                 ordenesSalida={ordenesSalida}
@@ -440,6 +500,16 @@ export function App() {
                 almacenes={almacenes}
                 selectedClienteId={selectedClienteId}
                 selectedAlmacenId={selectedAlmacenId}
+                initialSubTab={
+                  currentTab === 'salidas'
+                    ? 'salidas'
+                    : currentTab === 'rutas'
+                    ? 'rutas'
+                    : 'pedidos'
+                }
+                onSubTabChange={(subTab) => {
+                  setCurrentTab(subTab as any);
+                }}
                 onOpenTabletChofer={(rutaId) => {
                   setChoferSelectedRutaId(rutaId || null);
                   setCurrentTab('chofer');
@@ -503,7 +573,7 @@ export function App() {
             {currentTab === 'chofer' && (
               <ChoferRutaTabletView
                 initialRutaId={choferSelectedRutaId || undefined}
-                onBack={() => setCurrentTab('outbound')}
+                onBack={() => setCurrentTab('rutas')}
                 almacenes={almacenes}
               />
             )}

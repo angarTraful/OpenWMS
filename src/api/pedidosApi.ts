@@ -181,12 +181,235 @@ export const pedidosApi = {
   },
 
   // --- RPC: Asignación y Reserva Automática FEFO/FIFO ---
-  async asignarPickingFEFO(pedidoId: string) {
+  async asignarPickingFEFO(pedidoId: string, estrategia: 'FEFO' | 'FIFO' = 'FEFO') {
     const { data, error } = await supabase.rpc('wms_asignar_picking_fefo', {
-      p_pedido_id: pedidoId
+      p_pedido_id: pedidoId,
+      p_estrategia: estrategia,
     });
     if (error) throw error;
     return data;
+  },
+
+  // --- Asignación Integral: Estrategia FEFO/FIFO + Asignación de Operador, Supervisor y Controller ---
+  async asignarPickingConEstrategia(params: {
+    pedidoId: string;
+    estrategia: 'FEFO' | 'FIFO';
+    operadorId?: string;
+    supervisorId?: string;
+    controllerId?: string;
+    operadorNombre?: string;
+    supervisorNombre?: string;
+    controllerNombre?: string;
+  }) {
+    // 1. Ejecutar alocación de stock con la estrategia elegida
+    const { data: resRpc, error: errRpc } = await supabase.rpc('wms_asignar_picking_fefo', {
+      p_pedido_id: params.pedidoId,
+      p_estrategia: params.estrategia,
+    });
+    if (errRpc) throw errRpc;
+
+    // 2. Si se asignó un Operador de picking, actualizar las tareas de picking generadas
+    if (params.operadorId) {
+      try {
+        await supabase
+          .from('tareas_picking')
+          .update({ operador_id: params.operadorId })
+          .eq('pedido_id', params.pedidoId);
+      } catch (errTask) {
+        console.warn('Aviso actualizando operador en tareas_picking:', errTask);
+      }
+    }
+
+    // 3. Actualizar metadatos en el pedido (estrategia y roles asignados)
+    try {
+      const { data: pedActual } = await supabase
+        .from('pedidos')
+        .select('observaciones')
+        .eq('id', params.pedidoId)
+        .single();
+
+      const rolesTagParts: string[] = [];
+      rolesTagParts.push(`Estrategia: ${params.estrategia}`);
+      if (params.operadorNombre) rolesTagParts.push(`Operador: ${params.operadorNombre}`);
+      if (params.supervisorNombre) rolesTagParts.push(`Supervisor: ${params.supervisorNombre}`);
+      if (params.controllerNombre) rolesTagParts.push(`Controller: ${params.controllerNombre}`);
+
+      const metaTag = `[${rolesTagParts.join(' | ')}]`;
+      const prevObs = pedActual?.observaciones || '';
+      const cleanObs = prevObs.replace(/\[Estrategia:.*?\]/g, '').trim();
+      const nuevaObs = cleanObs ? `${cleanObs} ${metaTag}` : metaTag;
+
+      await supabase
+        .from('pedidos')
+        .update({
+          observaciones: nuevaObs,
+          estrategia_alocacion: params.estrategia,
+          operador_picking_id: params.operadorId || null,
+          supervisor_picking_id: params.supervisorId || null,
+          controller_picking_id: params.controllerId || null,
+        } as any)
+        .eq('id', params.pedidoId);
+    } catch (errPed) {
+      console.warn('Aviso actualizando metadatos de roles en pedidos:', errPed);
+    }
+
+    return resRpc;
+  },
+
+  // --- Registro de Control por Muestreo en Zona de Expediciones ---
+  async registrarControlMuestreo(params: {
+    pedidoId: string;
+    usuario: string;
+    resultado: 'conforme' | 'con_observacion';
+    observaciones?: string;
+    itemsMuestreados: number;
+  }) {
+    const horaActual = new Date().toISOString();
+    const resumenResultado = `${params.resultado.toUpperCase()} (${params.itemsMuestreados} artículos verificados)`;
+
+    // Obtener observaciones actuales del pedido
+    const { data: ped } = await supabase
+      .from('pedidos')
+      .select('observaciones')
+      .eq('id', params.pedidoId)
+      .single();
+
+    const tagMuestreo = `[Muestreo Expedición: ${resumenResultado} por ${params.usuario} - ${new Date().toLocaleTimeString('es-AR')}${params.observaciones ? ` - Obs: ${params.observaciones}` : ''}]`;
+    const nuevaObs = ped?.observaciones ? `${ped.observaciones} | ${tagMuestreo}` : tagMuestreo;
+
+    const { data, error } = await supabase
+      .from('pedidos')
+      .update({
+        control_muestreo_completado: true,
+        control_muestreo_fecha: horaActual,
+        control_muestreo_usuario: params.usuario,
+        control_muestreo_resultado: params.resultado,
+        observaciones: nuevaObs,
+      } as any)
+      .eq('id', params.pedidoId)
+      .select()
+      .single();
+
+    if (error) {
+      // Fallback si columnas aún no migradas: asentar en observaciones
+      await supabase
+        .from('pedidos')
+        .update({ observaciones: nuevaObs })
+        .eq('id', params.pedidoId);
+    }
+
+    return data;
+  },
+
+  // --- Parcializar Pedido (Fraccionar pedido si no entra en la unidad de transporte) ---
+  async parcializarPedido(params: {
+    pedidoOriginalId: string;
+    itemsADespachar: Array<{ detalleId: string; cantidadADespachar: number }>;
+    motivo?: string;
+  }) {
+    // 1. Obtener datos completos del pedido original
+    const pedidoConDetalle = await this.obtenerPedidoConDetalle(params.pedidoOriginalId);
+    if (!pedidoConDetalle) throw new Error('Pedido original no encontrado');
+
+    const detallesOriginales = pedidoConDetalle.detalles || [];
+    const itemsRestantes: Array<{
+      articulo_id: string;
+      cantidad_solicitada: number;
+      cantidad_reservada: number;
+    }> = [];
+
+    let algunRenglonFraccionado = false;
+
+    // Calcular las cantidades a dejar en el pedido original y las que van a nuevo pedido remanente
+    for (const d of detallesOriginales) {
+      const match = params.itemsADespachar.find((i) => i.detalleId === d.id);
+      const cantDespachar = match ? Math.min(match.cantidadADespachar, Number(d.cantidad_solicitada)) : Number(d.cantidad_solicitada);
+      const remanente = Math.max(0, Number(d.cantidad_solicitada) - cantDespachar);
+
+      if (remanente > 0) {
+        algunRenglonFraccionado = true;
+        itemsRestantes.push({
+          articulo_id: d.articulo_id,
+          cantidad_solicitada: remanente,
+          cantidad_reservada: 0,
+        });
+      }
+    }
+
+    if (!algunRenglonFraccionado) {
+      throw new Error('No se detectó ningún artículo con remanente para parcializar.');
+    }
+
+    // 2. Crear pedido hijo / remanente (Saldo pendiente para viaje 2)
+    // Preservar el mismo estado del original (ej. 'preparado') para continuar el flujo sin recomenzar
+    const numeroNuevoPedido = `${pedidoConDetalle.numero_pedido}-PARTE2`;
+    const obsHijo = `[Fraccionamiento de ${pedidoConDetalle.numero_pedido} por capacidad de carga / unidad de transporte${params.motivo ? ` - Motivo: ${params.motivo}` : ''}]`;
+    const estadoHijo = pedidoConDetalle.estado || 'preparado';
+    const esPreparado = estadoHijo === 'preparado' || estadoHijo === 'agrupado_salida';
+
+    const { data: pedidoHijo, error: errHijo } = await supabase
+      .from('pedidos')
+      .insert({
+        cliente_id: pedidoConDetalle.cliente_id,
+        destinatario_id: pedidoConDetalle.destinatario_id,
+        almacen_origen_id: pedidoConDetalle.almacen_origen_id,
+        numero_pedido: numeroNuevoPedido,
+        orden_compra_cliente: pedidoConDetalle.orden_compra_cliente,
+        fecha_compromiso_entrega: pedidoConDetalle.fecha_compromiso_entrega,
+        modalidad_entrega: pedidoConDetalle.modalidad_entrega || 'envio_domicilio',
+        prioridad: pedidoConDetalle.prioridad || 'normal',
+        estado: estadoHijo,
+        observaciones: obsHijo,
+        pedido_padre_id: pedidoConDetalle.id,
+        es_parcializado: true,
+        estrategia_alocacion: (pedidoConDetalle as any).estrategia_alocacion || 'FEFO',
+        operador_picking_id: (pedidoConDetalle as any).operador_picking_id || null,
+        supervisor_picking_id: (pedidoConDetalle as any).supervisor_picking_id || null,
+        controller_picking_id: (pedidoConDetalle as any).controller_picking_id || null,
+      } as any)
+      .select()
+      .single();
+
+    if (errHijo) throw errHijo;
+
+    // Insertar renglones en el nuevo pedido hijo (con cantidad_separada igual a solicitada si el pedido ya estaba preparado)
+    const renglonesHijo = itemsRestantes.map((r) => ({
+      pedido_id: pedidoHijo.id,
+      articulo_id: r.articulo_id,
+      cantidad_solicitada: r.cantidad_solicitada,
+      cantidad_reservada: esPreparado ? r.cantidad_solicitada : 0,
+      cantidad_separada: esPreparado ? r.cantidad_solicitada : 0,
+    }));
+
+    const { error: errDetHijo } = await supabase.from('pedidos_detalle').insert(renglonesHijo);
+    if (errDetHijo) throw errDetHijo;
+
+    // 3. Ajustar cantidades en el pedido original para que coincidan exactamente con lo que se despacha en este viaje
+    for (const item of params.itemsADespachar) {
+      await supabase
+        .from('pedidos_detalle')
+        .update({
+          cantidad_solicitada: item.cantidadADespachar,
+          cantidad_separada: item.cantidadADespachar,
+          cantidad_reservada: item.cantidadADespachar,
+        })
+        .eq('id', item.detalleId);
+    }
+
+    // Actualizar pedido original indicando que fue fraccionado
+    const obsPadre = `${pedidoConDetalle.observaciones || ''} [Parcializado en viaje 1: Se remite carga parcial. Saldo en pedido ${numeroNuevoPedido}]`.trim();
+    await supabase
+      .from('pedidos')
+      .update({
+        observaciones: obsPadre,
+        es_parcializado: true,
+      } as any)
+      .eq('id', pedidoConDetalle.id);
+
+    return {
+      pedidoOriginalActualizado: pedidoConDetalle.id,
+      pedidoRemanenteCreado: pedidoHijo,
+    };
   },
 
   // --- RPC de Picking con validación de Stock, Kardex y Novedades ---
@@ -234,27 +457,38 @@ export const pedidosApi = {
     valorDeclaradoTotal?: number;
   }) {
     let rpcResult: any = null;
+
+    // 1. Enviar explícitamente p_valor_declarado_total (como número o 0) y p_cae/p_orden_salida_id como null
+    // Esto evita que JSON.stringify omita las claves (comportamiento de undefined) y previene la ambigüedad de Postgres
+    // "Could not choose the best candidate function between..."
+    const rpcPayload = {
+      p_pedido_id: params.pedidoId,
+      p_numero_remito_rx: params.numeroRemitoRx,
+      p_cae: params.cae ? params.cae.trim() : null,
+      p_orden_salida_id: params.ordenSalidaId || null,
+      p_valor_declarado_total: typeof params.valorDeclaradoTotal === 'number' && !isNaN(params.valorDeclaradoTotal)
+        ? params.valorDeclaradoTotal
+        : 0,
+    };
+
     try {
-      // 1. Intentar llamar con el parámetro extendido p_valor_declarado_total
-      const { data, error } = await supabase.rpc('wms_emitir_remito_rx', {
-        p_pedido_id: params.pedidoId,
-        p_numero_remito_rx: params.numeroRemitoRx,
-        p_cae: params.cae || undefined,
-        p_orden_salida_id: params.ordenSalidaId || undefined,
-        p_valor_declarado_total: params.valorDeclaradoTotal !== undefined ? params.valorDeclaradoTotal : undefined,
-      });
+      const { data, error } = await (supabase.rpc as any)('wms_emitir_remito_rx', rpcPayload);
       if (error) throw error;
       rpcResult = data;
     } catch (errRpc: any) {
-      // Fallback: si la función en la DB tiene la firma anterior de 4 parámetros
-      const { data, error } = await supabase.rpc('wms_emitir_remito_rx', {
-        p_pedido_id: params.pedidoId,
-        p_numero_remito_rx: params.numeroRemitoRx,
-        p_cae: params.cae || undefined,
-        p_orden_salida_id: params.ordenSalidaId || undefined,
-      });
-      if (error) throw error;
-      rpcResult = data;
+      // Si la DB sólo tiene la función antigua de 4 parámetros sin p_valor_declarado_total
+      if (errRpc?.message?.includes('p_valor_declarado_total') || errRpc?.code === 'PGRST202') {
+        const { data: fbData, error: fbError } = await (supabase.rpc as any)('wms_emitir_remito_rx', {
+          p_pedido_id: params.pedidoId,
+          p_numero_remito_rx: params.numeroRemitoRx,
+          p_cae: params.cae ? params.cae.trim() : null,
+          p_orden_salida_id: params.ordenSalidaId || null,
+        });
+        if (fbError) throw fbError;
+        rpcResult = fbData;
+      } else {
+        throw errRpc;
+      }
     }
 
     // 2. Si el usuario editó el valor declarado total, asegurar que quede persistido en la fila de remitos_transito
@@ -263,6 +497,41 @@ export const pedidosApi = {
         .from('remitos_transito')
         .update({ valor_declarado_total: params.valorDeclaradoTotal })
         .eq('pedido_id', params.pedidoId);
+    }
+
+    // 3. Garantizar que la emisión del remito mantenga el pedido en 'preparado' (o 'agrupado_salida')
+    // El pedido NO debe pasar a 'despachado' hasta que se cargue y entregue en reparto, o se retire por mostrador.
+    try {
+      const { data: pedActual } = await supabase
+        .from('pedidos')
+        .select('estado')
+        .eq('id', params.pedidoId)
+        .single();
+
+      if (pedActual && pedActual.estado !== 'agrupado_salida') {
+        await supabase
+          .from('pedidos')
+          .update({
+            estado: 'preparado',
+            actualizado_en: new Date().toISOString(),
+          })
+          .eq('id', params.pedidoId);
+      }
+    } catch (e) {
+      console.warn('Aviso preservando estado preparado del pedido tras remito:', e);
+    }
+
+    // 4. Vincular automáticamente con cualquier parada de itinerario existente
+    const finalRemitoId = rpcResult?.remito_id;
+    if (finalRemitoId) {
+      try {
+        await supabase
+          .from('rutas_paradas_itinerario')
+          .update({ remito_id: finalRemitoId })
+          .eq('pedido_id', params.pedidoId);
+      } catch (errParada) {
+        console.warn('Aviso vinculando remito emitido a parada de ruta existente:', errParada);
+      }
     }
 
     return rpcResult;

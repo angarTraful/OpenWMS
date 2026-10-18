@@ -21,6 +21,7 @@ import {
   Moon,
   Sparkles,
   Truck,
+  PackageCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -28,6 +29,9 @@ export type TabType =
   | 'overview'
   | 'inventory'
   | 'inbound'
+  | 'pedidos'
+  | 'salidas'
+  | 'rutas'
   | 'outbound'
   | 'kardex'
   | 'analytics'
@@ -69,7 +73,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'overview', label: 'Tablero de control', icon: Activity },
         { id: 'inventory', label: 'Inventario & Stock', icon: Layers },
         { id: 'inbound', label: 'Inbound / Recepción', icon: ArrowDownToLine },
-        { id: 'outbound', label: 'Picking & Despacho', icon: ArrowUpFromLine },
+        { id: 'pedidos', label: '1. Pedidos / Picking', icon: PackageCheck, badge: 'Etapa 1' },
+        { id: 'salidas', label: '2. Salidas', icon: ArrowUpFromLine, badge: 'Etapa 2' },
+        { id: 'rutas', label: '3. Ruteos', icon: Truck, badge: 'Etapa 3' },
         { id: 'kardex', label: 'Kardex Trazabilidad', icon: History },
       ],
     },

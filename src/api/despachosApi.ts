@@ -226,7 +226,7 @@ export const despachosApi = {
     return data;
   },
 
-  // --- Registrar Entrega de Parada (Tablet Chofer) con Conformidad o Novedad ---
+  // --- Registrar Entrega de Parada (Tablet Chofer) con Conformidad o Novedad y Geoposición ---
   async registrarEntregaParada(params: {
     paradaId: string;
     rutaId: string;
@@ -238,6 +238,8 @@ export const despachosApi = {
     motivoNovedad?: string;
     fotoRemitoUrl?: string;
     observaciones?: string;
+    latitudEntrega?: number | null;
+    longitudEntrega?: number | null;
   }) {
     // 1. Intentar RPC almacenada
     try {
@@ -256,6 +258,20 @@ export const despachosApi = {
       );
 
       if (!rpcError && rpcData) {
+        // Si hay coordenadas GPS, persistirlas directamente en la parada
+        if (params.latitudEntrega && params.longitudEntrega) {
+          try {
+            await supabase
+              .from('rutas_paradas_itinerario')
+              .update({
+                latitud_entrega: params.latitudEntrega,
+                longitud_entrega: params.longitudEntrega,
+              } as any)
+              .eq('id', params.paradaId);
+          } catch (e) {
+            console.warn('Aviso actualizando GPS en parada:', e);
+          }
+        }
         return rpcData;
       }
       if (rpcError) {
@@ -273,7 +289,7 @@ export const despachosApi = {
       observaciones: params.observaciones || (params.motivoNovedad ? `Novedad: ${params.motivoNovedad}` : null),
     };
 
-    // Intentar con campos extendidos
+    // Intentar con campos extendidos incluyendo GPS
     let updateOk = false;
     try {
       const { error: extErr } = await supabase
@@ -285,6 +301,8 @@ export const despachosApi = {
           firma_digital: params.firmaDigital || null,
           motivo_novedad: params.motivoNovedad || null,
           foto_remito_url: params.fotoRemitoUrl || null,
+          latitud_entrega: params.latitudEntrega || null,
+          longitud_entrega: params.longitudEntrega || null,
         } as any)
         .eq('id', params.paradaId);
 
@@ -412,6 +430,166 @@ export const despachosApi = {
 
     if (obsErr) throw obsErr;
     return { success: true };
+  },
+
+  // --- Control de Carga en Muelle (Verificación previa a Iniciar Viaje) ---
+  async registrarControlCarga(params: {
+    rutaId: string;
+    usuario: string;
+    precinto?: string;
+    observaciones?: string;
+    bultosVerificados?: number;
+  }) {
+    const horaActual = new Date().toISOString();
+    const tag = `[Control de Carga en Muelle APROBADO por ${params.usuario} el ${new Date().toLocaleTimeString('es-AR')}${params.precinto ? ` - Precinto: ${params.precinto}` : ''}${params.bultosVerificados ? ` - Bultos: ${params.bultosVerificados}` : ''}]`;
+
+    // 1. Obtener notas actuales (con try/catch por si notas_viaje aún no está en el schema cache)
+    let notasActuales = '';
+    try {
+      const { data: ruta } = await supabase
+        .from('rutas_entrega')
+        .select('notas_viaje')
+        .eq('id', params.rutaId)
+        .maybeSingle();
+      notasActuales = ruta?.notas_viaje || '';
+    } catch {
+      // Ignorar si la columna notas_viaje aún no existe
+    }
+
+    const notasActualizadas = notasActuales ? `${notasActuales} | ${tag}` : tag;
+
+    // 2. Actualizar estado a 'en_carga' y persistir flags de control
+    const updatePayload: any = {
+      estado: 'en_carga' as any,
+      control_carga_completado: true,
+      control_carga_fecha: horaActual,
+      control_carga_usuario: params.usuario,
+      control_carga_precinto: params.precinto || null,
+      notas_viaje: notasActualizadas,
+    };
+
+    let { data, error } = await supabase
+      .from('rutas_entrega')
+      .update(updatePayload)
+      .eq('id', params.rutaId)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      // Fallback si notas_viaje o columnas de control de carga aún no existen en la tabla
+      console.warn('Fallback actualizando ruta sin columnas extendidas:', error.message);
+      delete updatePayload.notas_viaje;
+      delete updatePayload.control_carga_completado;
+      delete updatePayload.control_carga_fecha;
+      delete updatePayload.control_carga_usuario;
+      delete updatePayload.control_carga_precinto;
+
+      const { data: fbData, error: fbError } = await supabase
+        .from('rutas_entrega')
+        .update({ estado: 'en_carga' as any })
+        .eq('id', params.rutaId)
+        .select()
+        .maybeSingle();
+
+      if (fbError) throw fbError;
+      return fbData;
+    }
+
+    return data;
+  },
+
+  // --- Actualizar Datos de Hoja de Ruta (Módulo Supervisor Web) ---
+  async actualizarDatosRuta(params: {
+    rutaId: string;
+    fechaHoraSalidaEstimada?: string | null;
+    choferNombre?: string;
+    choferDocumento?: string | null;
+    choferTelefono?: string | null;
+    acompananteNombre?: string | null;
+    acompananteDocumento?: string | null;
+    vehiculoPatente?: string;
+    tipoVehiculo?: string | null;
+    transporteEmpresa?: string;
+    notasViaje?: string | null;
+  }) {
+    const payload: any = {};
+    if (params.fechaHoraSalidaEstimada !== undefined) payload.fecha_hora_salida_estimada = params.fechaHoraSalidaEstimada;
+    if (params.choferNombre !== undefined) payload.chofer_nombre = params.choferNombre;
+    if (params.choferDocumento !== undefined) payload.chofer_documento = params.choferDocumento;
+    if (params.choferTelefono !== undefined) payload.chofer_telefono = params.choferTelefono;
+    if (params.acompananteNombre !== undefined) payload.acompanante_nombre = params.acompananteNombre;
+    if (params.acompananteDocumento !== undefined) payload.acompanante_documento = params.acompananteDocumento;
+    if (params.vehiculoPatente !== undefined) payload.vehiculo_patente = params.vehiculoPatente.toUpperCase();
+    if (params.tipoVehiculo !== undefined) payload.tipo_vehiculo = params.tipoVehiculo;
+    if (params.transporteEmpresa !== undefined) payload.transporte_empresa = params.transporteEmpresa;
+    if (params.notasViaje !== undefined) payload.notas_viaje = params.notasViaje;
+
+    let { data, error } = await supabase
+      .from('rutas_entrega')
+      .update(payload)
+      .eq('id', params.rutaId)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      if (error.message?.includes('notas_viaje') || error.message?.includes('schema cache')) {
+        delete payload.notas_viaje;
+        delete payload.acompanante_nombre;
+        delete payload.acompanante_documento;
+        const { data: retryData, error: retryError } = await supabase
+          .from('rutas_entrega')
+          .update(payload)
+          .eq('id', params.rutaId)
+          .select()
+          .maybeSingle();
+        if (retryError) throw retryError;
+        return retryData;
+      }
+      throw error;
+    }
+    return data;
+  },
+
+  // --- Supervisor: Forzar Cierre de Ruta / Desvíos de Retorno ---
+  async forzarCierreRuta(rutaId: string, motivo: string, supervisorNombre: string) {
+    const notaCierre = `[Cierre Forzado por Supervisor ${supervisorNombre} - ${new Date().toLocaleTimeString('es-AR')}: ${motivo}]`;
+
+    let notasActuales = '';
+    try {
+      const { data: ruta } = await supabase
+        .from('rutas_entrega')
+        .select('notas_viaje')
+        .eq('id', rutaId)
+        .maybeSingle();
+      notasActuales = ruta?.notas_viaje || '';
+    } catch {}
+
+    const notasActualizadas = notasActuales ? `${notasActuales} | ${notaCierre}` : notaCierre;
+
+    const payload: any = {
+      estado: 'itinerario_cumplido' as any,
+      notas_viaje: notasActualizadas,
+    };
+
+    let { data, error } = await supabase
+      .from('rutas_entrega')
+      .update(payload)
+      .eq('id', rutaId)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      delete payload.notas_viaje;
+      const { data: retryData, error: retryError } = await supabase
+        .from('rutas_entrega')
+        .update({ estado: 'itinerario_cumplido' as any })
+        .eq('id', rutaId)
+        .select()
+        .maybeSingle();
+      if (retryError) throw retryError;
+      return retryData;
+    }
+    return data;
   },
 
   // --- Generadores de Enlace de Navegación Google Maps ---

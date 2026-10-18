@@ -17,6 +17,8 @@ import {
   Check,
   Sparkles,
   Info,
+  Search,
+  X,
 } from 'lucide-react';
 import { rfApi, type RfPickingTask } from '../../api/rfApi';
 import { RfScannerInput } from './RfScannerInput';
@@ -51,6 +53,10 @@ export const RfPickingView: React.FC<RfPickingViewProps> = ({
   const [confirming, setConfirming] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Modal para búsqueda manual cuando el producto no tiene EAN/QR o está dañado
+  const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [manualSearchQuery, setManualSearchQuery] = useState('');
 
   const cargarTareas = async () => {
     setLoading(true);
@@ -625,6 +631,24 @@ export const RfPickingView: React.FC<RfPickingViewProps> = ({
                   ) as string[]
                 }
               />
+
+              {/* Botón de Asistencia: Búsqueda Manual si el artículo no tiene código de barras o QR */}
+              <div className="pt-2 border-t border-slate-100 dark:border-[#1e2e26] flex items-center justify-between gap-2">
+                <span className="text-[11px] text-slate-500 dark:text-[#978d9d]">
+                  ¿Sin código EAN/QR o etiqueta ilegible?
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setManualSearchQuery('');
+                    setManualModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white dark:bg-[#ffba28] dark:hover:bg-[#ffc857] dark:text-[#38260a] shadow-xs transition-all active:scale-95"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span>Buscar a Mano</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -787,6 +811,96 @@ export const RfPickingView: React.FC<RfPickingViewProps> = ({
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL TÁCTIL INDUSTRIAL: Búsqueda y Validación Manual de Artículo         */}
+      {/* ========================================================================= */}
+      {manualModalOpen && activeTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 dark:bg-black/80 backdrop-blur-xs animate-fadeIn">
+          <div className="relative w-full max-w-lg rounded-2xl bg-white dark:bg-[#161616] border border-slate-200 dark:border-[#2e2e2e] shadow-2xl p-5 text-slate-900 dark:text-[#e5e2e1] space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-[#252525]">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-lg bg-amber-100 text-amber-800 dark:bg-[#3d2c10] dark:text-[#ffba28]">
+                  <Search className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-black uppercase tracking-wide">
+                    Identificar Artículo a Mano
+                  </h4>
+                  <span className="text-[10px] text-slate-500 dark:text-[#978d9d]">
+                    Confirme el artículo si no cuenta con código físico EAN o QR
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManualModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:text-[#888] dark:hover:text-[#eee]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Ficha del Artículo Activo a Validar */}
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#1f1f1f] border border-slate-200 dark:border-[#333] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-xs font-black text-amber-700 dark:text-[#ffba28] px-2 py-0.5 rounded bg-amber-50 dark:bg-[#2b1f0c] border border-amber-200 dark:border-[#523d18]">
+                  SKU: {activeTask.articulo?.sku || 'S/D'}
+                </span>
+                <span className="text-xs font-mono font-bold text-emerald-600 dark:text-[#69f0ae]">
+                  {cantidadRequeridaActiva} {activeTask.articulo?.unidad_medida || 'un.'}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-sm font-bold block text-slate-900 dark:text-[#e5e2e1]">
+                  {activeTask.articulo?.nombre || 'Artículo sin denominación'}
+                </span>
+                {(activeTask.articulo as any)?.descripcion && (
+                  <p className="text-xs text-slate-600 dark:text-[#aaa] mt-0.5">
+                    {(activeTask.articulo as any).descripcion}
+                  </p>
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-slate-200 dark:border-[#2f2f2f] flex flex-wrap items-center gap-3 text-[11px] font-mono text-slate-500 dark:text-[#888]">
+                <span>Posición: <b className="text-slate-800 dark:text-[#ddd]">{activeTask.ubicacion_origen?.codigo_etiqueta}</b></span>
+                {activeTask.lote?.numero_lote && (
+                  <span>Lote: <b className="text-slate-800 dark:text-[#ddd]">{activeTask.lote.numero_lote}</b></span>
+                )}
+                {activeTask.articulo?.codigo_barras && (
+                  <span>EAN Teórico: <b className="text-slate-800 dark:text-[#ddd]">{activeTask.articulo.codigo_barras}</b></span>
+                )}
+              </div>
+            </div>
+
+            {/* Botonera de Acción del Modal */}
+            <div className="grid grid-cols-2 gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setManualModalOpen(false)}
+                className="py-2.5 px-4 rounded-xl border border-slate-300 dark:border-[#3a3a3a] text-xs font-bold text-slate-600 dark:text-[#cdc3d4] hover:bg-slate-100 dark:hover:bg-[#242424] transition-colors"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  rfSoundService.playSuccess();
+                  triggerFlash('success');
+                  setManualModalOpen(false);
+                  setPickStep('confirmar_cantidad');
+                }}
+                className="py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-[#69f0ae] dark:hover:bg-[#8bf4c1] dark:text-[#00391d] text-xs font-black uppercase tracking-wide flex items-center justify-center gap-1.5 shadow-sm active:scale-95 transition-all"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Validar Artículo</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -46,6 +46,8 @@ export const AsignarRutaModal: React.FC<AsignarRutaModalProps> = ({
   const [choferNombre, setChoferNombre] = useState<string>('');
   const [choferDocumento, setChoferDocumento] = useState<string>('');
   const [choferTelefono, setChoferTelefono] = useState<string>('');
+  const [acompananteNombre, setAcompananteNombre] = useState<string>('');
+  const [acompananteDocumento, setAcompananteDocumento] = useState<string>('');
 
   // Selected orders & stops sequence
   const [selectedPedidosIds, setSelectedPedidosIds] = useState<string[]>([]);
@@ -68,6 +70,8 @@ export const AsignarRutaModal: React.FC<AsignarRutaModalProps> = ({
       setChoferNombre('');
       setChoferDocumento('');
       setChoferTelefono('');
+      setAcompananteNombre('');
+      setAcompananteDocumento('');
 
       // Pre-select prepared orders if available (excluyendo retiros en planta / pick-up)
       const prepIds = pedidosDisponibles
@@ -137,6 +141,15 @@ export const AsignarRutaModal: React.FC<AsignarRutaModalProps> = ({
         fechaSalidaProgramada ? new Date(fechaSalidaProgramada).toISOString() : undefined
       );
 
+      // Buscar si los pedidos seleccionados ya cuentan con remito emitido para ligarlo de inmediato
+      const remitosExistentes = await despachosApi.listarRemitos();
+      const remitoPorPedidoMap: Record<string, string> = {};
+      (remitosExistentes || []).forEach((r: any) => {
+        if (r.pedido_id && r.id) {
+          remitoPorPedidoMap[r.pedido_id] = r.id;
+        }
+      });
+
       // 2. Asignar Ruta e Itinerario con paradas ordenadas
       await despachosApi.asignarRuta(
         {
@@ -148,12 +161,15 @@ export const AsignarRutaModal: React.FC<AsignarRutaModalProps> = ({
           chofer_nombre: choferNombre.trim(),
           chofer_documento: choferDocumento.trim() || null,
           chofer_telefono: choferTelefono.trim() || null,
+          acompanante_nombre: acompananteNombre.trim() || null,
+          acompanante_documento: acompananteDocumento.trim() || null,
           fecha_hora_salida_estimada: fechaSalidaProgramada ? new Date(fechaSalidaProgramada).toISOString() : null,
           estado: 'programada',
         },
         paradasOrdenadas.map((p, idx) => ({
           destinatario_id: p.destinatario_id,
           pedido_id: p.id,
+          remito_id: (p as any).remito_id || remitoPorPedidoMap[p.id] || null,
           secuencia_parada: idx + 1,
         }))
       );
@@ -338,6 +354,35 @@ export const AsignarRutaModal: React.FC<AsignarRutaModalProps> = ({
                   value={choferTelefono}
                   onChange={(e) => setChoferTelefono(e.target.value)}
                   placeholder="ej: +54 9 11 4455-6677"
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm text-slate-900 dark:text-[#e5e2e1] font-mono focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-[#dab9ff]"
+                />
+              </div>
+            </div>
+
+            {/* Acompañante de reparto */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-200 dark:border-[#2a2a2a]">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1.5">
+                  Acompañante / Custodio / Peón de Carga (Opcional)
+                </label>
+                <input
+                  type="text"
+                  value={acompananteNombre}
+                  onChange={(e) => setAcompananteNombre(e.target.value)}
+                  placeholder="ej: Carlos Giménez (Peón de Carga)"
+                  className="w-full px-3 py-2 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm text-slate-900 dark:text-[#e5e2e1] focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-[#dab9ff]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] mb-1.5">
+                  DNI / Documento del Acompañante
+                </label>
+                <input
+                  type="text"
+                  value={acompananteDocumento}
+                  onChange={(e) => setAcompananteDocumento(e.target.value)}
+                  placeholder="ej: 38.123.456"
                   className="w-full px-3 py-2 rounded-lg bg-white dark:bg-[#131313] border border-slate-300 dark:border-[#333333] text-sm text-slate-900 dark:text-[#e5e2e1] font-mono focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 dark:focus:border-[#dab9ff]"
                 />
               </div>
