@@ -13,6 +13,21 @@ export type { PedidoEnEjecucion } from './pedidosApi';
 export { despachosApi } from './despachosApi';
 export { billingApi } from './billingApi';
 export { lotesApi } from './lotesApi';
+export {
+  programacionApi,
+  solicitudesParalelasApi,
+  generarTokenAccesoCliente,
+  validarTokenAccesoCliente,
+  formatFechaCorta,
+  PLANILLA_INITIAL_DATA,
+} from './programacionApi';
+export type {
+  ProgramacionItem,
+  EstadoProgramacion,
+  DocumentoAdjuntoInfo,
+  SolicitudParalelaItem,
+  TokenAccesoPayload,
+} from './programacionApi';
 
 export type * from '../../types/database.types';
 

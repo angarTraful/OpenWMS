@@ -31,6 +31,7 @@ import { ClienteModal } from './components/masters/ClienteModal';
 import { RfTerminalView } from './components/rf/RfTerminalView';
 import { ChoferRutaTabletView } from './components/outbound/ChoferRutaTabletView';
 import { ImportarMovimientosModal } from './components/inventory/ImportarMovimientosModal';
+import { ProgramacionGridView } from './components/programacion/ProgramacionGridView';
 
 
 import {
@@ -96,16 +97,29 @@ export function App() {
       const appParam = (searchParams.get('app') || searchParams.get('view') || searchParams.get('mode') || '').toLowerCase();
       if (['chofer', 'driver', 'reparto', 'entrega'].includes(appParam)) return 'chofer';
       if (['rf', 'terminal', 'scanner', 'pistola'].includes(appParam)) return 'rf';
+      if (['programacion', 'cliente', 'clientes', 'portal', 'planilla'].includes(appParam) || searchParams.has('token')) return 'programacion';
 
       const hash = window.location.hash.toLowerCase();
       if (hash.includes('chofer') || hash.includes('driver')) return 'chofer';
       if (hash.includes('rf') || hash.includes('scanner') || hash.includes('terminal')) return 'rf';
+      if (hash.includes('programacion') || hash.includes('cliente') || hash.includes('planilla')) return 'programacion';
 
       const pathname = window.location.pathname.toLowerCase();
       if (pathname.endsWith('/chofer') || pathname.endsWith('/driver')) return 'chofer';
       if (pathname.endsWith('/rf') || pathname.endsWith('/terminal')) return 'rf';
+      if (pathname.endsWith('/programacion') || pathname.endsWith('/cliente') || pathname.endsWith('/portal')) return 'programacion';
     } catch {}
     return null;
+  }, []);
+
+  // Leer cliente específico desde URL para el Portal de Clientes
+  const urlClienteParam = useMemo(() => {
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      return searchParams.get('cliente') || searchParams.get('cli') || null;
+    } catch {
+      return null;
+    }
   }, []);
 
   // Leer rutaId desde URL si viene especificado para deep-linking
@@ -282,6 +296,23 @@ export function App() {
           almacenes={almacenes}
           selectedAlmacenId={selectedAlmacenId}
           onExitTerminal={() => {
+            window.location.href = window.location.pathname;
+          }}
+        />
+      </div>
+    );
+  }
+
+  if (standaloneApp === 'programacion') {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] dark:bg-[#131313] text-[#0f172a] dark:text-[#e5e2e1] p-3 sm:p-6 transition-colors duration-200">
+        <ProgramacionGridView
+          clientes={clientes}
+          almacenes={almacenes}
+          selectedClienteId={selectedClienteId}
+          isStandalonePortal={true}
+          initialClienteNombre={urlClienteParam || undefined}
+          onExitPortal={() => {
             window.location.href = window.location.pathname;
           }}
         />
@@ -514,6 +545,15 @@ export function App() {
                   setChoferSelectedRutaId(rutaId || null);
                   setCurrentTab('chofer');
                 }}
+              />
+            )}
+
+            {currentTab === 'programacion' && (
+              <ProgramacionGridView
+                clientes={clientes}
+                almacenes={almacenes}
+                selectedClienteId={selectedClienteId}
+                isStandalonePortal={false}
               />
             )}
 

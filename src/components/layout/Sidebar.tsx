@@ -22,6 +22,7 @@ import {
   Sparkles,
   Truck,
   PackageCheck,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -32,6 +33,7 @@ export type TabType =
   | 'pedidos'
   | 'salidas'
   | 'rutas'
+  | 'programacion'
   | 'outbound'
   | 'kardex'
   | 'analytics'
@@ -76,6 +78,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'pedidos', label: '1. Pedidos / Picking', icon: PackageCheck, badge: 'Etapa 1' },
         { id: 'salidas', label: '2. Salidas', icon: ArrowUpFromLine, badge: 'Etapa 2' },
         { id: 'rutas', label: '3. Ruteos', icon: Truck, badge: 'Etapa 3' },
+        { id: 'programacion', label: 'Planilla Programación', icon: FileSpreadsheet, badge: 'Clientes' },
         { id: 'kardex', label: 'Kardex Trazabilidad', icon: History },
       ],
     },

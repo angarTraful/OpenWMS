@@ -483,6 +483,191 @@ export function exportToCSV(options: {
   triggerDownload(blob, cleanFilename);
 }
 
+/**
+ * Exporta la Planilla de Programación a Excel XML (.xls) con colores idénticos:
+ * - Naranja / Ámbar (#FFC000) para Entregados
+ * - Celeste (#BDD7EE) para Programados
+ * - Verde (#C6EFCE) para En Tránsito
+ * - Blanco (#FFFFFF) para Pendientes
+ */
+export function exportProgramacionExcel(options: {
+  filename: string;
+  clienteFiltro?: string;
+  items: Array<{
+    fecha_display: string;
+    cliente_nombre: string;
+    rollos: number;
+    item_codigo: string;
+    orden_compra: string;
+    pedido_numero: string;
+    deposito: string;
+    estado: string;
+    comentarios?: string;
+  }>;
+}): void {
+  const { filename, clienteFiltro, items } = options;
+  const cleanFilename = filename.endsWith('.xls') ? filename : `${filename}.xls`;
+
+  const totalRollos = items.reduce((acc, it) => acc + (Number(it.rollos) || 0), 0);
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Borders/>
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000"/>
+  </Style>
+  <Style ss:ID="Header">
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#000000"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Interior ss:Color="#EAEAEA" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#000000"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#000000"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#000000"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#000000"/>
+   </Borders>
+  </Style>
+  <!-- Fila Normal Blanca -->
+  <Style ss:ID="CellWhite">
+   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#000000"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B0B0B0"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B0B0B0"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B0B0B0"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B0B0B0"/>
+   </Borders>
+  </Style>
+  <!-- Fila Naranja (#FFC000) - Entregados -->
+  <Style ss:ID="CellOrange">
+   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#000000"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Interior ss:Color="#FFC000" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#7A5A00"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#7A5A00"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#7A5A00"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#7A5A00"/>
+   </Borders>
+  </Style>
+  <!-- Fila Celeste (#BDD7EE) - Programados -->
+  <Style ss:ID="CellBlue">
+   <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#000000"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Interior ss:Color="#BDD7EE" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#4F81BD"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#4F81BD"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#4F81BD"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#4F81BD"/>
+   </Borders>
+  </Style>
+  <!-- Fila Verde (#C6EFCE) - En Transito -->
+  <Style ss:ID="CellGreen">
+   <Font ss:FontName="Calibri" ss:Size="10" ss:Color="#006100"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Interior ss:Color="#C6EFCE" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#006100"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#006100"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#006100"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#006100"/>
+   </Borders>
+  </Style>
+  <!-- Total Final -->
+  <Style ss:ID="TotalCell">
+   <Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1" ss:Color="#000000"/>
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Interior ss:Color="#D9D9D9" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Double" ss:Weight="3" ss:Color="#000000"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#000000"/>
+   </Borders>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Programacion">
+  <Table ss:DefaultRowHeight="20">
+   <Column ss:AutoFitWidth="0" ss:Width="70"/>   <!-- FECHA -->
+   <Column ss:AutoFitWidth="0" ss:Width="120"/>  <!-- DESTINATARIO -->
+   <Column ss:AutoFitWidth="0" ss:Width="65"/>   <!-- ROLLOS -->
+   <Column ss:AutoFitWidth="0" ss:Width="130"/>  <!-- ITEM -->
+   <Column ss:AutoFitWidth="0" ss:Width="160"/>  <!-- ORDEN DE COMPRA -->
+   <Column ss:AutoFitWidth="0" ss:Width="95"/>   <!-- PEDIDO -->
+   <Column ss:AutoFitWidth="0" ss:Width="85"/>   <!-- DEPOSITO -->
+   <Column ss:AutoFitWidth="0" ss:Width="105"/>  <!-- DOCUMENTOS -->
+   <Column ss:AutoFitWidth="0" ss:Width="180"/>  <!-- COMENTARIOS -->
+
+   <!-- Fila Encabezados -->
+   <Row ss:Height="24">
+    <Cell ss:StyleID="Header"><Data ss:Type="String">FECHA</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">DESTINATARIO (CLIENTE)</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">ROLLOS</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">ITEM</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">ORDEN DE COMPRA</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">PEDIDO</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">DEPOSITO</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">DOCUMENTOS</Data></Cell>
+    <Cell ss:StyleID="Header"><Data ss:Type="String">COMENTARIOS</Data></Cell>
+   </Row>
+
+   <!-- Filas de Datos con Colores -->
+   ${items
+     .map((it: any) => {
+       let styleId = 'CellWhite';
+       if (it.estado === 'entregado') styleId = 'CellOrange';
+       else if (it.estado === 'programado') styleId = 'CellBlue';
+       else if (it.estado === 'en_transito') styleId = 'CellGreen';
+
+       const dest = it.destinatario_nombre || it.cliente_nombre;
+       const docs = [
+         it.documentos?.tiene_remito ? 'REMITO' : '',
+         it.documentos?.tiene_romaneo ? 'ROMANEO' : '',
+         it.documentos?.tiene_rx_conformado ? 'RX-CONF' : '',
+       ]
+         .filter(Boolean)
+         .join(' | ') || 'PEDIDO';
+
+       return `<Row ss:Height="19">
+    <Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(it.fecha_display)}</Data></Cell>
+    <Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(dest)}</Data></Cell>
+    <Cell ss:StyleID="${styleId}"><Data ss:Type="Number">${it.rollos}</Data></Cell>
+    <Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(it.item_codigo)}</Data></Cell>
+    <Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(it.orden_compra)}</Data></Cell>
+    <Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(it.pedido_numero)}</Data></Cell>
+    <Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(it.deposito)}</Data></Cell>
+    <Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(docs)}</Data></Cell>
+    <Cell ss:StyleID="${styleId}"><Data ss:Type="String">${escapeXml(it.comentarios || '')}</Data></Cell>
+   </Row>`;
+     })
+     .join('\n   ')}
+
+   <!-- Fila Total -->
+   <Row ss:Height="22">
+    <Cell ss:StyleID="TotalCell"><Data ss:Type="String">TOTAL</Data></Cell>
+    <Cell ss:StyleID="TotalCell"><Data ss:Type="String">${items.length} pedidos</Data></Cell>
+    <Cell ss:StyleID="TotalCell"><Data ss:Type="Number">${totalRollos}</Data></Cell>
+    <Cell ss:StyleID="TotalCell"><Data ss:Type="String">-</Data></Cell>
+    <Cell ss:StyleID="TotalCell"><Data ss:Type="String">-</Data></Cell>
+    <Cell ss:StyleID="TotalCell"><Data ss:Type="String">-</Data></Cell>
+    <Cell ss:StyleID="TotalCell"><Data ss:Type="String">-</Data></Cell>
+    <Cell ss:StyleID="TotalCell"><Data ss:Type="String">-</Data></Cell>
+    <Cell ss:StyleID="TotalCell"><Data ss:Type="String">-</Data></Cell>
+   </Row>
+  </Table>
+ </Worksheet>
+</Workbook>`;
+
+  const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  triggerDownload(blob, cleanFilename);
+}
+
 function escapeXml(str: string): string {
   return String(str)
     .replace(/&/g, '&amp;')
