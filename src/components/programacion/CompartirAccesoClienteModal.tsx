@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { generarTokenAccesoCliente } from '@/api/programacionApi';
+import { ModalPortal } from '@/components/ui/ModalPortal';
 
 interface CompartirAccesoClienteModalProps {
   isOpen: boolean;
@@ -70,7 +71,8 @@ export const CompartirAccesoClienteModal: React.FC<CompartirAccesoClienteModalPr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+    <ModalPortal onClose={onClose}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
       <div className="relative w-full max-w-lg bg-white dark:bg-[#1a1919] border border-slate-300 dark:border-[#333333] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-[#2a2a2a] bg-slate-50 dark:bg-[#1e1d1d]">
@@ -248,5 +250,6 @@ export const CompartirAccesoClienteModal: React.FC<CompartirAccesoClienteModalPr
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 };

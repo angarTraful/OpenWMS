@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Plus, Calendar, Building2, Package, Layers, Hash, Warehouse, FileText } from 'lucide-react';
 import { EstadoProgramacion, ProgramacionItem, formatFechaCorta } from '@/api/programacionApi';
+import { ModalPortal } from '@/components/ui/ModalPortal';
 
 interface NuevoItemProgramacionModalProps {
   isOpen: boolean;
@@ -76,7 +77,8 @@ export const NuevoItemProgramacionModal: React.FC<NuevoItemProgramacionModalProp
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
+    <ModalPortal onClose={onClose}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-150">
       <div className="relative w-full max-w-lg bg-white dark:bg-[#1a1919] border border-slate-200 dark:border-[#333333] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-[#2a2a2a] bg-slate-50/50 dark:bg-[#1e1d1d]">
@@ -344,5 +346,6 @@ export const NuevoItemProgramacionModal: React.FC<NuevoItemProgramacionModalProp
         </form>
       </div>
     </div>
+    </ModalPortal>
   );
 };

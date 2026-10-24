@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Truck,
@@ -24,12 +24,19 @@ import {
   Edit2,
   Check,
   Lock,
+  Upload,
+  Image as ImageIcon,
+  Trash2,
+  PackageCheck,
+  QrCode,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { formatDate, formatDateTime, formatNumber, formatM3 } from '@/lib/utils';
 import { recepcionesApi } from '@/api/recepcionesApi';
 import { almacenApi } from '@/api/almacenApi';
 import { getDescripcionFull } from '@/api/articulosApi';
+import { subirDocumentoAGoogleDrive } from '@/lib/googleDriveService';
+import { supabase } from '@/api/supabaseClient';
 import { NuevaRecepcionModal } from './NuevaRecepcionModal';
 import { RecursosDescargaModal } from './RecursosDescargaModal';
 import { AsignarMuelleModal } from './AsignarMuelleModal';
@@ -74,6 +81,13 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
   const [labelModalOpen, setLabelModalOpen] = useState(false);
   const [etiquetaParaImprimir, setEtiquetaParaImprimir] = useState<any | null>(null);
 
+  // Estados para Despacho de Aduana y Documentación/Fotos en Inspección
+  const [isEditingDespacho, setIsEditingDespacho] = useState(false);
+  const [despachoEditado, setDespachoEditado] = useState('');
+  const [savingDespacho, setSavingDespacho] = useState(false);
+  const [uploadingInspectionDoc, setUploadingInspectionDoc] = useState(false);
+  const inspectionFileInputRef = useRef<HTMLInputElement>(null);
+
   // Modal Putaway
   const [putawayModalOpen, setPutawayModalOpen] = useState(false);
   const [activeTask, setActiveTask] = useState<any | null>(null);
@@ -84,6 +98,8 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
   const [ubicaciones, setUbicaciones] = useState<any[]>([]);
   const [loadingUbicaciones, setLoadingUbicaciones] = useState(false);
   const [esPaletizado, setEsPaletizado] = useState(false);
+  const [cantidadPallets, setCantidadPallets] = useState<number>(1);
+  const [baseLpnPrefix, setBaseLpnPrefix] = useState<string>('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConformingAll, setIsConformingAll] = useState(false);
@@ -148,19 +164,34 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
     });
   }, [recepciones, filtroEstado, searchTerm]);
 
-  const generarLpnAleatorio = () => {
+  const generarBaseLpnPrefix = () => {
     const year = new Date().getFullYear();
-    const rand = Math.floor(100000 + Math.random() * 900000);
+    const rand = Math.floor(1000 + Math.random() * 9000);
     return `PLT-${year}-${rand}`;
+  };
+
+  const generarLpnAleatorio = () => {
+    return generarBaseLpnPrefix();
   };
 
   const handleAbrirPutaway = (det: any, tarea: any) => {
     setActiveTask(tarea);
     setActiveDetalle(det);
-    setCantidadRecibida(Number(det.cantidad_esperada) || 1);
+    const cantInicial = Number(det.cantidad_esperada) || 1;
+    setCantidadRecibida(cantInicial);
+
+    // Calcular cantidad sugerida de pallets (cant / bultos_por_pallet del articulo)
+    const art = det.articulo || {};
+    const bultosXPlt = Number(art.bultos_por_pallet) || Number(art.cantidad_por_pallet) || 40;
+    const palletsSugeridos = Math.max(1, Math.ceil(cantInicial / bultosXPlt));
+    setCantidadPallets(palletsSugeridos);
+
+    const basePrefix = generarBaseLpnPrefix();
+    setBaseLpnPrefix(basePrefix);
+    setCodigoLpn(palletsSugeridos > 1 ? `${basePrefix}/001.../${String(palletsSugeridos).padStart(3, '0')}` : `${basePrefix}/001`);
+
     // Por defecto carga suelta (no paletizado), stock gestionado por bultos
     setEsPaletizado(false);
-    setCodigoLpn('');
     setUbicacionDestinoId(tarea.ubicacion_destino_id || det.ubicacion_sugerida_id || '');
     setLotePutaway(det.lote_declarado || '');
     setFeedbackMsg(null);
@@ -168,6 +199,112 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
 
     if (selectedRecepcion?.almacen_id && ubicaciones.length === 0) {
       cargarUbicacionesAlmacen(selectedRecepcion.almacen_id);
+    }
+  };
+
+  const handleGuardarDespacho = async () => {
+    if (!detailData) return;
+    setSavingDespacho(true);
+    try {
+      await recepcionesApi.actualizarDespachoAduana(detailData.id, despachoEditado.trim());
+      setIsEditingDespacho(false);
+      const freshData = await recepcionesApi.obtenerRecepcionConDetalle(detailData.id);
+      setDetailData(freshData);
+      onRefresh();
+    } catch (err: any) {
+      console.error('Error actualizando despacho de aduana:', err);
+      alert(err.message || 'Error al actualizar despacho de aduana');
+    } finally {
+      setSavingDespacho(false);
+    }
+  };
+
+  const handleInspectionFilesAdded = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !detailData) return;
+
+    setUploadingInspectionDoc(true);
+    try {
+      const docsActuales = Array.isArray(detailData.documentos_adjuntos)
+        ? [...detailData.documentos_adjuntos]
+        : [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        let fileUrl = '';
+
+        try {
+          const uploadRes = await subirDocumentoAGoogleDrive({
+            file,
+            fileName: `Recep_${detailData.numero_recepcion || 'DOC'}_${cleanName}`,
+            folder: 'Recepciones',
+          });
+          fileUrl = uploadRes.url;
+        } catch (uploadErr) {
+          console.warn('Error subiendo a Google Drive, fallback a dataURL:', uploadErr);
+          fileUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (re) => resolve(re.target?.result as string);
+            reader.readAsDataURL(file);
+          });
+        }
+
+        let tipoDoc = 'Foto / Documento';
+        const lower = file.name.toLowerCase();
+        if (lower.includes('despacho') || lower.includes('aduana') || lower.includes('sim')) {
+          tipoDoc = 'Despacho Aduana';
+        } else if (lower.includes('remito') || lower.includes('guia')) {
+          tipoDoc = 'Remito / Guía';
+        } else if (lower.includes('precinto') || lower.includes('cntr') || lower.includes('contenedor')) {
+          tipoDoc = 'Foto Precinto / Contenedor';
+        } else if (file.type.startsWith('image/')) {
+          tipoDoc = 'Foto Inspección';
+        }
+
+        docsActuales.push({
+          id: 'doc-' + Date.now() + '-' + i + '-' + Math.random().toString(36).substring(2, 5),
+          nombre: file.name,
+          url: fileUrl,
+          tipo: tipoDoc,
+          fecha: new Date().toISOString(),
+          tamano: file.size,
+        });
+      }
+
+      await recepcionesApi.actualizarDocumentosAdjuntos(detailData.id, docsActuales);
+      const freshData = await recepcionesApi.obtenerRecepcionConDetalle(detailData.id);
+      setDetailData(freshData);
+      onRefresh();
+    } catch (err: any) {
+      console.error('Error adjuntando documentos:', err);
+      alert(err.message || 'Error al adjuntar documentos');
+    } finally {
+      setUploadingInspectionDoc(false);
+      if (inspectionFileInputRef.current) {
+        inspectionFileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleEliminarDocInspection = async (docIdOrIndex: string | number) => {
+    if (!detailData || !window.confirm('¿Desea eliminar este documento adjunto?')) return;
+    try {
+      const docsActuales = Array.isArray(detailData.documentos_adjuntos)
+        ? [...detailData.documentos_adjuntos]
+        : [];
+      const nuevosDocs = docsActuales.filter((d: any, idx: number) => {
+        if (typeof docIdOrIndex === 'string') return d.id !== docIdOrIndex;
+        return idx !== docIdOrIndex;
+      });
+
+      await recepcionesApi.actualizarDocumentosAdjuntos(detailData.id, nuevosDocs);
+      const freshData = await recepcionesApi.obtenerRecepcionConDetalle(detailData.id);
+      setDetailData(freshData);
+      onRefresh();
+    } catch (err: any) {
+      console.error('Error eliminando documento:', err);
+      alert(err.message || 'Error al eliminar documento');
     }
   };
 
@@ -209,11 +346,55 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
         await recepcionesApi.actualizarLoteDetalle(activeDetalle.id, lotePutaway.trim());
       }
 
+      // Desvío: si la cantidad recibida no es igual a la esperada, registrar la nota de desvío
+      const esperado = Number(activeDetalle.cantidad_esperada) || 0;
+      const dif = cantidadRecibida - esperado;
+      const desvioNota = dif !== 0
+        ? `Desvío en recepción: Se esperaban ${esperado} bultos y se recibieron ${cantidadRecibida} bultos (${dif > 0 ? '+' : ''}${dif}). Conformado real OK.`
+        : undefined;
+
+      // Paletizado LPN secuencial si está activado
+      let lpnAsignado: string | undefined = undefined;
+      if (esPaletizado) {
+        const pfx = (baseLpnPrefix.trim() || codigoLpn.trim() || generarBaseLpnPrefix()).split('/')[0];
+        const nPallets = Math.max(1, cantidadPallets);
+        if (nPallets > 1) {
+          lpnAsignado = `${pfx}/001.../${String(nPallets).padStart(3, '0')}`;
+        } else {
+          lpnAsignado = `${pfx}/001`;
+        }
+
+        // Registrar cada pallet individual en pallets_lpn
+        try {
+          const clienteId = detailData?.cliente_id || selectedRecepcion?.cliente_id;
+          if (clienteId) {
+            const bultosTotales = Number(cantidadRecibida);
+            const bultosBase = Math.floor(bultosTotales / nPallets);
+            const palletsToInsert = Array.from({ length: nPallets }).map((_, i) => {
+              const isLast = i === nPallets - 1;
+              const bultosGrupo = isLast ? Math.max(1, bultosTotales - bultosBase * (nPallets - 1)) : bultosBase;
+              return {
+                cliente_id: clienteId,
+                codigo_lpn: `${pfx}/${String(i + 1).padStart(3, '0')}`,
+                estado: 'almacenado',
+                volumen_total_m3: (Number(activeDetalle.articulo?.volumen_unitario_m3) || 0) * bultosGrupo,
+                peso_total_kg: (Number(activeDetalle.articulo?.peso_unitario_kg) || 0) * bultosGrupo,
+              };
+            });
+            await supabase.from('pallets_lpn').upsert(palletsToInsert, { onConflict: 'codigo_lpn' });
+          }
+        } catch (errPlt) {
+          console.warn('Error registrando secuencia de pallets LPN:', errPlt);
+        }
+      }
+
       await recepcionesApi.confirmarPutaway({
         tareaId: activeTask.id,
         cantidadRecibida,
-        codigoLpn: esPaletizado && codigoLpn.trim() ? codigoLpn.trim() : undefined,
+        codigoLpn: lpnAsignado,
         ubicacionDestinoId: ubicacionDestinoId.trim() || undefined,
+        detalleId: activeDetalle.id,
+        desvioNota,
       });
 
       // Refrescar datos en segundo plano
@@ -269,9 +450,18 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
         setTimeout(() => {
           setActiveTask(nextTarea);
           setActiveDetalle(nextDetalle);
-          setCantidadRecibida(Number(nextDetalle.cantidad_esperada) || 1);
+          const nextCant = Number(nextDetalle.cantidad_esperada) || 1;
+          setCantidadRecibida(nextCant);
+          const nextArt = nextDetalle.articulo || {};
+          const nextBultosXPlt = Number(nextArt.bultos_por_pallet) || Number(nextArt.cantidad_por_pallet) || 40;
+          const nextPalletsSugeridos = Math.max(1, Math.ceil(nextCant / nextBultosXPlt));
+          setCantidadPallets(nextPalletsSugeridos);
+
+          const nextPfx = generarBaseLpnPrefix();
+          setBaseLpnPrefix(nextPfx);
+          setCodigoLpn(nextPalletsSugeridos > 1 ? `${nextPfx}/001.../${String(nextPalletsSugeridos).padStart(3, '0')}` : `${nextPfx}/001`);
+
           setEsPaletizado(false);
-          setCodigoLpn('');
           setUbicacionDestinoId(nextTarea.ubicacion_destino_id || nextDetalle.ubicacion_sugerida_id || '');
           setFeedbackMsg(null);
           setIsSubmitting(false);
@@ -298,6 +488,31 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
         type: 'error',
         text: err.message || 'Error al ejecutar la transacción de Putaway',
       });
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleConfirmarTodosDesdeModal = async () => {
+    if (!selectedRecepcion) return;
+    if (
+      !window.confirm(
+        `¿Recibir y conformar todos los ${tareasPendientesTotal} artículos pendientes de la orden ${selectedRecepcion.numero_recepcion} sin contar? Se ingresarán las cantidades esperadas directamente al inventario.`
+      )
+    ) {
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await recepcionesApi.conformarTodos(selectedRecepcion.id);
+      setPutawayModalOpen(false);
+      setActiveTask(null);
+      setActiveDetalle(null);
+      await handleSelectRecepcion({ ...selectedRecepcion, estado: 'finalizada' });
+      onRefresh();
+    } catch (err: any) {
+      console.error('Error conformando todos:', err);
+      alert(err.message || 'Error al conformar todos los artículos');
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -501,12 +716,16 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                           {rec.numero_recepcion}
                         </span>
                         {getStatusBadge(rec.estado)}
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 dark:bg-[#252424] text-slate-700 dark:text-[#cdc3d4] border border-slate-200 dark:border-[#333333]">
+                          <MapPin className="w-3 h-3 text-indigo-500" />
+                          <span>{rec.almacen?.nombre || 'Depósito'}</span>
+                        </span>
                         <span className="text-xs text-slate-800 dark:text-[#e5e2e1] font-medium ml-1">
                           {rec.cliente?.razon_social || 'Cliente 3PL'}
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                      <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
                         <span className="text-[11px] font-mono text-slate-500 dark:text-[#cdc3d4] mr-2">
                           {formatDateTime(rec.fecha_hora_arribo)}
                         </span>
@@ -542,19 +761,18 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                               </button>
                             )}
 
-                            {rec.estado === 'en_control' && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleConformarRecepcionDirecta(rec);
-                                }}
-                                disabled={isConformingDirectId === rec.id}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-violet-600 hover:bg-violet-700 text-white dark:bg-[#dab9ff] dark:hover:bg-[#eedbff] dark:text-[#460283] transition-all shadow-sm disabled:opacity-50"
-                              >
-                                <Zap className="w-3 h-3 text-white dark:text-[#460283]" />
-                                <span>{isConformingDirectId === rec.id ? 'Recibiendo...' : '⚡ Recibir sin contar'}</span>
-                              </button>
-                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleConformarRecepcionDirecta(rec);
+                              }}
+                              disabled={isConformingDirectId === rec.id}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-violet-600 hover:bg-violet-700 text-white dark:bg-[#dab9ff] dark:hover:bg-[#eedbff] dark:text-[#460283] transition-all shadow-sm disabled:opacity-50"
+                              title="Recibir directo sin contar todos los artículos esperados (Fast Inbound)"
+                            >
+                              <Zap className="w-3 h-3 text-white dark:text-[#460283]" />
+                              <span>{isConformingDirectId === rec.id ? 'Recibiendo...' : '⚡ Fast Inbound'}</span>
+                            </button>
                           </>
                         )}
 
@@ -570,7 +788,16 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-2 pt-2 border-t border-slate-100 dark:border-[#2a2a2a] text-[11px] text-slate-600 dark:text-[#cdc3d4]">
+                    <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 mt-2 pt-2 border-t border-slate-100 dark:border-[#2a2a2a] text-[11px] text-slate-600 dark:text-[#cdc3d4]">
+                      <div>
+                        <span className="text-slate-400 dark:text-[#978d9d] block text-[10px] uppercase font-semibold flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-indigo-500" />
+                          Depósito:
+                        </span>
+                        <span className="font-semibold text-slate-800 dark:text-[#e5e2e1] truncate block">
+                          {rec.almacen?.nombre || '-'}
+                        </span>
+                      </div>
                       <div>
                         <span className="text-slate-400 dark:text-[#978d9d] block text-[10px] uppercase font-semibold">Contenedor / OC:</span>
                         <span className="font-mono font-bold text-slate-800 dark:text-[#e5e2e1] truncate block">
@@ -690,7 +917,16 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
               <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
                 {/* Ficha Resumen de Cabecera Operativa */}
                 {detailData && (
-                  <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-[#171616] border border-slate-200 dark:border-[#333333] grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-[#171616] border border-slate-200 dark:border-[#333333] grid grid-cols-2 sm:grid-cols-6 gap-2.5 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-400 dark:text-[#978d9d] block uppercase font-semibold flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-indigo-500" />
+                        Depósito:
+                      </span>
+                      <span className="font-semibold text-slate-800 dark:text-[#e5e2e1] truncate block">
+                        {detailData.almacen?.nombre || selectedRecepcion.almacen?.nombre || '-'}
+                      </span>
+                    </div>
                     <div>
                       <span className="text-[10px] text-slate-400 dark:text-[#978d9d] block uppercase font-semibold">Fecha Arribo:</span>
                       <span className="font-mono font-bold text-slate-800 dark:text-[#e5e2e1]">{formatDateTime(detailData.fecha_hora_arribo)}</span>
@@ -758,7 +994,56 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-400 dark:text-[#978d9d] block uppercase font-semibold">Despacho Aduana:</span>
-                      <span className="font-mono text-slate-800 dark:text-[#e5e2e1]">{detailData.despacho_aduana || '-'}</span>
+                      {isEditingDespacho ? (
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <input
+                            type="text"
+                            value={despachoEditado}
+                            onChange={(e) => setDespachoEditado(e.target.value)}
+                            placeholder="Ej: 26001IC04000123A"
+                            className="px-1.5 py-0.5 text-xs font-mono font-bold rounded-lg bg-white dark:bg-[#131313] border border-violet-500 text-slate-800 dark:text-[#e5e2e1] w-28 outline-none"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleGuardarDespacho();
+                              if (e.key === 'Escape') setIsEditingDespacho(false);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            disabled={savingDespacho}
+                            onClick={handleGuardarDespacho}
+                            className="p-1 rounded-lg bg-violet-600 text-white dark:bg-[#dab9ff] dark:text-[#460283] hover:bg-violet-700"
+                            title="Guardar despacho"
+                          >
+                            <Check className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingDespacho(false)}
+                            className="p-1 rounded-lg bg-slate-200 text-slate-700 dark:bg-[#2a2a2a] dark:text-[#cdc3d4] hover:bg-slate-300"
+                            title="Cancelar"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-slate-800 dark:text-[#e5e2e1] truncate block max-w-[110px]">
+                            {detailData.despacho_aduana || <span className="text-slate-400 italic">Sin despacho</span>}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDespachoEditado(detailData.despacho_aduana || '');
+                              setIsEditingDespacho(true);
+                            }}
+                            className="p-0.5 text-slate-400 hover:text-violet-600 dark:text-[#cdc3d4] dark:hover:text-[#dab9ff] rounded hover:bg-slate-200 dark:hover:bg-[#2a2a2a] transition-colors"
+                            title="Modificar / Cargar despacho de aduana"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-400 dark:text-[#978d9d] block uppercase font-semibold">Transporte:</span>
@@ -767,38 +1052,74 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                       </span>
                     </div>
 
-                    {/* Documentación Adjunta si existe */}
-                    {detailData.documentos_adjuntos && Array.isArray(detailData.documentos_adjuntos) && detailData.documentos_adjuntos.length > 0 && (
-                      <div className="col-span-2 sm:col-span-5 pt-2 border-t border-slate-200 dark:border-[#2a2a2a]">
-                        <span className="text-[10px] text-slate-500 dark:text-[#978d9d] block uppercase font-semibold mb-1.5 flex items-center gap-1">
+                    {/* Documentación & Imágenes de Inspección */}
+                    <div className="col-span-2 sm:col-span-6 pt-2 border-t border-slate-200 dark:border-[#2a2a2a]">
+                      <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                        <span className="text-[10px] text-slate-500 dark:text-[#978d9d] uppercase font-semibold flex items-center gap-1">
                           <Paperclip className="w-3 h-3 text-violet-600 dark:text-[#dab9ff]" />
-                          <span>Documentación Adjunta ({detailData.documentos_adjuntos.length}):</span>
+                          <span>Documentación & Fotos ({Array.isArray(detailData.documentos_adjuntos) ? detailData.documentos_adjuntos.length : 0}):</span>
                         </span>
+
+                        <label className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-semibold bg-violet-50 text-violet-700 border border-violet-200 dark:bg-[#271438] dark:text-[#dab9ff] dark:border-[#4d286e] hover:bg-violet-100 dark:hover:bg-[#391f52] cursor-pointer transition-colors shadow-xs">
+                          <Upload className="w-3 h-3" />
+                          <span>{uploadingInspectionDoc ? 'Subiendo...' : '+ Adjuntar Foto / Documento'}</span>
+                          <input
+                            type="file"
+                            ref={inspectionFileInputRef}
+                            multiple
+                            accept="image/*,.pdf,.doc,.docx"
+                            disabled={uploadingInspectionDoc}
+                            onChange={handleInspectionFilesAdded}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      {Array.isArray(detailData.documentos_adjuntos) && detailData.documentos_adjuntos.length > 0 ? (
                         <div className="flex flex-wrap gap-2">
                           {detailData.documentos_adjuntos.map((doc: any, docIdx: number) => (
-                            <button
-                              key={docIdx}
-                              type="button"
-                              onClick={() => setSelectedDocImg({ url: doc.url, nombre: doc.nombre })}
+                            <div
+                              key={doc.id || docIdx}
                               className="flex items-center gap-1.5 p-1 px-2 rounded-lg bg-white dark:bg-[#201f1f] border border-slate-200 dark:border-[#333333] hover:border-violet-500 text-left text-xs transition-colors group shadow-xs"
                             >
-                              {doc.url && (doc.url.startsWith('data:image') || doc.url.match(/\.(jpeg|jpg|png|webp|gif)/i)) ? (
-                                <img src={doc.url} alt={doc.nombre} className="w-6 h-6 object-cover rounded border border-slate-200 dark:border-[#44424a]" />
-                              ) : (
-                                <FileText className="w-4 h-4 text-slate-400 dark:text-[#cdc3d4]" />
-                              )}
-                              <div className="truncate max-w-[140px]">
-                                <div className="font-semibold text-slate-800 dark:text-[#e5e2e1] truncate group-hover:text-violet-600 dark:group-hover:text-[#dab9ff]">{doc.nombre}</div>
-                                <div className="text-[9px] text-slate-400 dark:text-[#978d9d]">{doc.tipo || 'Adjunto'}</div>
-                              </div>
-                            </button>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedDocImg({ url: doc.url, nombre: doc.nombre })}
+                                className="flex items-center gap-1.5 text-left"
+                              >
+                                {doc.url && (doc.url.startsWith('data:image') || doc.url.match(/\.(jpeg|jpg|png|webp|gif)/i)) ? (
+                                  <img src={doc.url} alt={doc.nombre} className="w-6 h-6 object-cover rounded border border-slate-200 dark:border-[#44424a]" />
+                                ) : (
+                                  <FileText className="w-4 h-4 text-slate-400 dark:text-[#cdc3d4]" />
+                                )}
+                                <div className="truncate max-w-[130px]">
+                                  <div className="font-semibold text-slate-800 dark:text-[#e5e2e1] truncate group-hover:text-violet-600 dark:group-hover:text-[#dab9ff]">{doc.nombre}</div>
+                                  <div className="text-[9px] text-slate-400 dark:text-[#978d9d]">{doc.tipo || 'Adjunto'}</div>
+                                </div>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEliminarDocInspection(doc.id || docIdx);
+                                }}
+                                className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded transition-colors ml-0.5"
+                                title="Eliminar adjunto"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
                           ))}
                         </div>
-                      </div>
-                    )}
+                      ) : (
+                        <p className="text-[11px] text-slate-400 dark:text-[#978d9d] italic py-0.5">
+                          Sin documentos ni fotos adjuntas aún. Puede subir remitos o fotos de inspección.
+                        </p>
+                      )}
+                    </div>
 
                     {/* Botones de Recursos, Romaneo & Etiquetas Brother */}
-                    <div className="col-span-2 sm:col-span-5 pt-3 border-t border-slate-200 dark:border-[#2a2a2a] flex flex-wrap items-center gap-2">
+                    <div className="col-span-2 sm:col-span-6 pt-3 border-t border-slate-200 dark:border-[#2a2a2a] flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => setRecursosModalOpen(true)}
@@ -952,10 +1273,15 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                           </div>
 
                           <div className="text-right">
-                            <span className="text-[10px] text-slate-500 dark:text-[#cdc3d4] block uppercase font-medium">Esperado</span>
+                            <span className="text-[10px] text-slate-500 dark:text-[#cdc3d4] block uppercase font-medium">Cantidad</span>
                             <span className="font-mono font-bold text-sm text-slate-900 dark:text-[#e5e2e1] tabular-nums">
                               {det.cantidad_esperada} bultos
                             </span>
+                            {det.comentarios && det.comentarios.includes('Desvío') && (
+                              <span className="inline-block mt-0.5 text-[9px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-[#342211] dark:text-[#ffd27a]">
+                                Desvío corregido OK
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -974,14 +1300,26 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
                             </button>
                           </div>
                         ) : (
-                          <div className="pt-2 border-t border-slate-100 dark:border-[#333333] flex items-center justify-between text-[11px] text-sky-700 dark:text-[#75d1ff]">
-                            <div className="flex items-center gap-1 font-semibold">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
-                              <span>Almacenado & Contabilizado</span>
+                          <div className="pt-2 border-t border-slate-100 dark:border-[#333333] space-y-1">
+                            <div className="flex items-center justify-between text-[11px] text-sky-700 dark:text-[#75d1ff]">
+                              <div className="flex items-center gap-1 font-semibold">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-[#69f0ae]" />
+                                <span className="text-slate-800 dark:text-[#e5e2e1]">Almacenado & Contabilizado</span>
+                                {det.comentarios && det.comentarios.includes('Desvío') && (
+                                  <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded font-bold bg-amber-100 text-amber-800 dark:bg-[#271d12] dark:text-[#ffd27a]">
+                                    Conforme (con desvío)
+                                  </span>
+                                )}
+                              </div>
+                              <span className="font-mono font-bold text-slate-800 dark:text-[#e5e2e1]">
+                                Recibido: {tareas[0]?.cantidad_recibida || det.cantidad_esperada} bultos
+                              </span>
                             </div>
-                            <span className="font-mono font-bold text-slate-700 dark:text-[#cdc3d4]">
-                              Recibido: {tareas[0]?.cantidad_recibida || det.cantidad_esperada} bultos
-                            </span>
+                            {det.comentarios && det.comentarios.includes('Desvío') && (
+                              <p className="text-[10px] text-amber-700 dark:text-[#ffd27a] italic bg-amber-50/60 dark:bg-[#22180e] p-1.5 rounded border border-amber-200/50 dark:border-[#4a3014]">
+                                ℹ {det.comentarios}
+                              </p>
+                            )}
                           </div>
                         )}
                       </motion.div>
@@ -1011,258 +1349,355 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
       {/* Modal B: Confirmar Putaway & Paletizado LPN Mejorado */}
       {putawayModalOpen && activeTask && activeDetalle && (
         <ModalPortal>
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] rounded-xl max-w-lg w-full p-5 space-y-4 shadow-2xl text-slate-800 dark:text-[#e5e2e1]">
-            {/* Header */}
-            <div>
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-[#e5e2e1] uppercase tracking-wider mb-1 flex items-center gap-2">
-                  <Box className="w-4 h-4 text-violet-600 dark:text-[#dab9ff]" />
-                  <span>Confirmar Guardado & Ubicación (Putaway)</span>
-                </h3>
-                {tareasPendientesTotal > 0 && (
-                  <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-200 dark:bg-[#2a173d] dark:text-[#dab9ff] dark:border-[#522b7c]">
-                    {tareasPendientesTotal} pendiente(s)
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 dark:text-[#cdc3d4]">
-                Confronta física en muelle e ingreso directo de bultos a rack o estantería (paletizado opcional).
-              </p>
-            </div>
-
-            {/* Ficha Resumen Renglón */}
-            <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-[#201f1f] border border-slate-200 dark:border-[#333333] text-xs space-y-1">
-              <div className="font-mono font-bold text-slate-900 dark:text-[#e5e2e1]">
-                {activeDetalle.articulo?.nombre || 'Artículo'}
-              </div>
-              <div className="text-xs text-slate-600 dark:text-[#cdc3d4]">
-                {(activeDetalle.articulo as any)?.descripcion_full || getDescripcionFull(activeDetalle.articulo) || activeDetalle.articulo?.descripcion || ''}
-              </div>
-              <div className="text-[11px] text-slate-600 dark:text-[#cdc3d4] flex items-center gap-3">
-                <span>
-                  Lote: <strong className="font-mono text-violet-700 dark:text-[#dab9ff]">{lotePutaway || activeDetalle.lote_declarado}</strong>
-                </span>
-                <span>
-                  Esperado: <strong className="font-mono text-slate-900 dark:text-[#e5e2e1]">{activeDetalle.cantidad_esperada} bultos</strong>
-                </span>
-                {activeDetalle.fecha_vencimiento && (
-                  <span>Vto: {formatDate(activeDetalle.fecha_vencimiento)}</span>
-                )}
-              </div>
-            </div>
-
-            {feedbackMsg && (
-              <div
-                className={`p-3 rounded-lg text-xs font-medium ${
-                  feedbackMsg?.type === 'success'
-                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-[#0f241a] dark:text-[#75d1ff] dark:border-[#1d4d38]'
-                    : 'bg-rose-50 text-rose-800 border border-rose-200 dark:bg-[#2a0e12] dark:text-[#ffb4ab] dark:border-[#690005]'
-                }`}
-              >
-                {feedbackMsg?.text}
-              </div>
-            )}
-
-            <form onSubmit={handleConfirmPutaway} className="space-y-4">
-              {/* 1. Confronta de Cantidad */}
-              <div>
-                <label className="text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] block mb-1">
-                  Cantidad Recibida Real (Bultos contados) <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  required
-                  value={cantidadRecibida}
-                  onChange={(e) => setCantidadRecibida(Number(e.target.value))}
-                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] font-mono font-bold focus:border-violet-500 outline-none"
-                />
-
-                {/* Detector de discrepancias */}
-                <div className="mt-1.5">
-                  {discrepancia === 0 ? (
-                    <div className="text-[11px] font-semibold text-emerald-600 dark:text-[#75d1ff] flex items-center gap-1.5">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Confronta conforme (100% de los bultos esperados recibidos)</span>
-                    </div>
-                  ) : discrepancia < 0 ? (
-                    <div className="text-[11px] font-semibold text-amber-600 dark:text-[#ffd27a] flex items-center gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      <span>Diferencia detectada: Faltante de {Math.abs(discrepancia)} bultos</span>
-                    </div>
-                  ) : (
-                    <div className="text-[11px] font-semibold text-violet-600 dark:text-[#dab9ff] flex items-center gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      <span>Diferencia detectada: Sobrante de +{discrepancia} bultos</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* 1.5. Lote Físico Confrontado (Modificable si difiere del declarado) */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] block">
-                    Lote / Batch Físico Verificado <span className="text-rose-500">*</span>
-                  </label>
-                  <span className="text-[10px] text-violet-600 dark:text-[#dab9ff]">
-                    Modificable si difiere del declarado
-                  </span>
-                </div>
-                <input
-                  type="text"
-                  required
-                  value={lotePutaway}
-                  onChange={(e) => setLotePutaway(e.target.value)}
-                  placeholder={activeDetalle.lote_declarado || 'Ej: LOTE-2026-X'}
-                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-violet-700 dark:text-[#dab9ff] font-mono font-bold focus:border-violet-500 outline-none"
-                />
-              </div>
-
-              {/* 2. Modalidad de Paletizado (Opcional) */}
-              <div className="p-3 rounded-xl border border-slate-200 dark:border-[#333333] bg-slate-50/80 dark:bg-[#201f1f] space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-slate-900 dark:text-[#e5e2e1]">
-                    <input
-                      type="checkbox"
-                      checked={esPaletizado}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setEsPaletizado(checked);
-                        if (checked && !codigoLpn.trim()) {
-                          setCodigoLpn(generarLpnAleatorio());
-                        } else if (!checked) {
-                          setCodigoLpn('');
-                        }
-                      }}
-                      className="w-4 h-4 rounded text-violet-600 border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313]"
-                    />
-                    <span>¿Carga Paletizada? Asignar Código Pallet LPN</span>
-                  </label>
-
-                  {esPaletizado ? (
-                    <Badge variant="info" size="sm">Pallet LPN</Badge>
-                  ) : (
-                    <span className="text-[10px] font-medium text-slate-500 dark:text-[#cdc3d4] font-mono">Bultos Sueltos</span>
-                  )}
-                </div>
-
-                {esPaletizado ? (
-                  <div className="space-y-1.5 pt-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4]">
-                        Código de Etiqueta LPN:
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm animate-fadeIn">
+            <div className="bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] rounded-xl max-w-xl w-full max-h-[92vh] flex flex-col shadow-2xl text-slate-800 dark:text-[#e5e2e1] overflow-hidden">
+              <form onSubmit={handleConfirmPutaway} className="flex flex-col h-full max-h-[92vh] overflow-hidden">
+                {/* Header fijo */}
+                <div className="p-4 border-b border-slate-200 dark:border-[#333333] shrink-0 bg-slate-50/70 dark:bg-[#201f1f]/70">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-[#e5e2e1] uppercase tracking-wider mb-0.5 flex items-center gap-2">
+                      <Box className="w-4 h-4 text-violet-600 dark:text-[#dab9ff]" />
+                      <span>Confirmar Guardado & Ubicación (Putaway)</span>
+                    </h3>
+                    {tareasPendientesTotal > 0 && (
+                      <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-200 dark:bg-[#2a173d] dark:text-[#dab9ff] dark:border-[#522b7c]">
+                        {tareasPendientesTotal} pendiente(s)
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => setCodigoLpn(generarLpnAleatorio())}
-                        className="text-[11px] font-semibold text-violet-600 dark:text-[#dab9ff] hover:underline flex items-center gap-1"
-                      >
-                        <Zap className="w-3 h-3" />
-                        <span>Auto-Generar LPN</span>
-                      </button>
-                    </div>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={codigoLpn}
-                        onChange={(e) => setCodigoLpn(e.target.value.toUpperCase())}
-                        placeholder="PLT-2026-000101"
-                        className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] font-mono uppercase focus:border-violet-500 outline-none"
-                      />
-                      <Barcode className="w-4 h-4 text-slate-400 dark:text-[#978d9d] absolute right-3 top-2.5" />
-                    </div>
-                    <p className="text-[10px] text-slate-500 dark:text-[#cdc3d4]">
-                      Puede ingresar o escanear la etiqueta del pallet físico.
-                    </p>
+                    )}
                   </div>
-                ) : (
-                  <div className="text-[11px] text-slate-600 dark:text-[#cdc3d4] flex items-center gap-2 pt-0.5">
-                    <Box className="w-4 h-4 text-slate-400 dark:text-[#978d9d] shrink-0" />
+                  <p className="text-xs text-slate-500 dark:text-[#cdc3d4]">
+                    Confronta física en muelle e ingreso directo de bultos a rack o estantería (paletizado opcional).
+                  </p>
+                </div>
+
+                {/* Cuerpo desplazable */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {/* Ficha Resumen Renglón */}
+                  <div className="p-3 rounded-xl bg-slate-50/80 dark:bg-[#201f1f] border border-slate-200 dark:border-[#333333] text-xs space-y-1">
+                    <div className="font-mono font-bold text-slate-900 dark:text-[#e5e2e1]">
+                      {activeDetalle.articulo?.nombre || 'Artículo'}
+                    </div>
+                    <div className="text-xs text-slate-600 dark:text-[#cdc3d4]">
+                      {(activeDetalle.articulo as any)?.descripcion_full || getDescripcionFull(activeDetalle.articulo) || activeDetalle.articulo?.descripcion || ''}
+                    </div>
+                    <div className="text-[11px] text-slate-600 dark:text-[#cdc3d4] flex items-center gap-3 flex-wrap">
+                      <span>
+                        Lote: <strong className="font-mono text-violet-700 dark:text-[#dab9ff]">{lotePutaway || activeDetalle.lote_declarado}</strong>
+                      </span>
+                      <span>
+                        Esperado: <strong className="font-mono text-slate-900 dark:text-[#e5e2e1]">{activeDetalle.cantidad_esperada} bultos</strong>
+                      </span>
+                      {activeDetalle.fecha_vencimiento && (
+                        <span>Vto: {formatDate(activeDetalle.fecha_vencimiento)}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {feedbackMsg && (
+                    <div
+                      className={`p-3 rounded-lg text-xs font-medium ${
+                        feedbackMsg?.type === 'success'
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-[#0f241a] dark:text-[#75d1ff] dark:border-[#1d4d38]'
+                          : 'bg-rose-50 text-rose-800 border border-rose-200 dark:bg-[#2a0e12] dark:text-[#ffb4ab] dark:border-[#690005]'
+                      }`}
+                    >
+                      {feedbackMsg?.text}
+                    </div>
+                  )}
+
+                  {/* 1. Confronta de Cantidad */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] block mb-1">
+                      Cantidad Recibida Real (Bultos contados) <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={cantidadRecibida}
+                      onChange={(e) => {
+                        const val = Math.max(1, Number(e.target.value) || 1);
+                        setCantidadRecibida(val);
+                        const art = activeDetalle?.articulo || {};
+                        const bultosXPlt = Number(art.bultos_por_pallet) || Number(art.cantidad_por_pallet) || 40;
+                        const sugerido = Math.max(1, Math.ceil(val / bultosXPlt));
+                        setCantidadPallets(sugerido);
+                      }}
+                      className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] font-mono font-bold focus:border-violet-500 outline-none"
+                    />
+
+                    {/* Detector de discrepancias */}
+                    <div className="mt-1.5">
+                      {discrepancia === 0 ? (
+                        <div className="text-[11px] font-semibold text-emerald-600 dark:text-[#75d1ff] flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Confronta conforme (100% de los bultos esperados recibidos)</span>
+                        </div>
+                      ) : (
+                        <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-[#271d12] border border-amber-200 dark:border-[#5a3814] space-y-1">
+                          <div className="text-[11px] font-semibold text-amber-700 dark:text-[#ffd27a] flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                            <span>
+                              {discrepancia < 0
+                                ? `Diferencia: Faltante de ${Math.abs(discrepancia)} bultos (Esperados: ${activeDetalle.cantidad_esperada} | Recibidos: ${cantidadRecibida})`
+                                : `Diferencia: Sobrante de +${discrepancia} bultos (Esperados: ${activeDetalle.cantidad_esperada} | Recibidos: ${cantidadRecibida})`}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-600 dark:text-[#cdc3d4] pl-5">
+                            Al confirmar, el sistema corregirá la cantidad a lo recibido real ({cantidadRecibida} bultos), registrará el desvío como nota en el movimiento y dará el renglón como OK.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 1.5. Lote Físico Confrontado */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] block">
+                        Lote / Batch Físico Verificado <span className="text-rose-500">*</span>
+                      </label>
+                      <span className="text-[10px] text-violet-600 dark:text-[#dab9ff]">
+                        Modificable si difiere del declarado
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={lotePutaway}
+                      onChange={(e) => setLotePutaway(e.target.value)}
+                      placeholder={activeDetalle.lote_declarado || 'Ej: LOTE-2026-X'}
+                      className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-violet-700 dark:text-[#dab9ff] font-mono font-bold focus:border-violet-500 outline-none"
+                    />
+                  </div>
+
+                  {/* 2. Modalidad de Paletizado con Secuencia LPN */}
+                  <div className="p-3.5 rounded-xl border border-slate-200 dark:border-[#333333] bg-slate-50/80 dark:bg-[#201f1f] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-semibold text-slate-900 dark:text-[#e5e2e1]">
+                        <input
+                          type="checkbox"
+                          checked={esPaletizado}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setEsPaletizado(checked);
+                            if (checked && !baseLpnPrefix) {
+                              const pfx = generarBaseLpnPrefix();
+                              setBaseLpnPrefix(pfx);
+                              setCodigoLpn(pfx);
+                            }
+                          }}
+                          className="w-4 h-4 rounded text-violet-600 border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313]"
+                        />
+                        <span>¿Carga Paletizada? Asignar Código Pallet LPN</span>
+                      </label>
+
+                      {esPaletizado ? (
+                        <Badge variant="info" size="sm">Pallet LPN Secuencial</Badge>
+                      ) : (
+                        <span className="text-[10px] font-medium text-slate-500 dark:text-[#cdc3d4] font-mono">Bultos Sueltos</span>
+                      )}
+                    </div>
+
+                    {esPaletizado ? (
+                      <div className="space-y-3 pt-1">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* Cantidad de Pallets */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] flex items-center gap-1">
+                                <PackageCheck className="w-3.5 h-3.5 text-violet-600 dark:text-[#dab9ff]" />
+                                <span>Cantidad de Pallets:</span>
+                              </label>
+                              <span className="text-[10px] text-violet-600 dark:text-[#dab9ff]">
+                                ~{Math.max(1, Math.round(cantidadRecibida / Math.max(1, cantidadPallets)))} btos/plt
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min="1"
+                                max="999"
+                                value={cantidadPallets}
+                                onChange={(e) => setCantidadPallets(Math.max(1, parseInt(e.target.value) || 1))}
+                                className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] font-mono font-bold focus:border-violet-500 outline-none"
+                              />
+                              {(() => {
+                                const bultosXPlt = Number(activeDetalle.articulo?.bultos_por_pallet) || Number(activeDetalle.articulo?.cantidad_por_pallet) || 40;
+                                const sugerido = Math.max(1, Math.ceil(cantidadRecibida / bultosXPlt));
+                                if (sugerido !== cantidadPallets) {
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={() => setCantidadPallets(sugerido)}
+                                      className="px-2 py-1 text-[10px] whitespace-nowrap font-semibold rounded bg-violet-100 text-violet-700 dark:bg-[#2a173d] dark:text-[#dab9ff] hover:opacity-80"
+                                      title={`Sugerido: ${sugerido} pallets (${cantidadRecibida} bultos / ${bultosXPlt} por pallet)`}
+                                    >
+                                      Usar {sugerido} sug.
+                                    </button>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </div>
+                            <p className="text-[10px] text-slate-500 dark:text-[#cdc3d4] mt-0.5">
+                              Cálculo por {Number(activeDetalle.articulo?.bultos_por_pallet) || Number(activeDetalle.articulo?.cantidad_por_pallet) || 40} bultos/pallet del maestro.
+                            </p>
+                          </div>
+
+                          {/* Prefijo Base Pallet LPN */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="text-[11px] font-semibold text-slate-700 dark:text-[#cdc3d4] flex items-center gap-1">
+                                <QrCode className="w-3.5 h-3.5 text-emerald-600 dark:text-[#69f0ae]" />
+                                <span>Prefijo Base LPN:</span>
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nuevo = generarBaseLpnPrefix();
+                                  setBaseLpnPrefix(nuevo);
+                                }}
+                                className="text-[10px] font-semibold text-violet-600 dark:text-[#dab9ff] hover:underline flex items-center gap-0.5"
+                              >
+                                <Zap className="w-2.5 h-2.5" />
+                                <span>Nuevo</span>
+                              </button>
+                            </div>
+                            <input
+                              type="text"
+                              value={baseLpnPrefix}
+                              onChange={(e) => setBaseLpnPrefix(e.target.value.toUpperCase())}
+                              placeholder="PLT-2026-2312"
+                              className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] font-mono uppercase font-bold focus:border-violet-500 outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Previsualización de secuencia LPN */}
+                        <div className="p-2.5 rounded-lg bg-violet-50/70 dark:bg-[#181124] border border-violet-200 dark:border-[#412759] text-xs">
+                          <span className="text-[10px] font-semibold uppercase text-violet-700 dark:text-[#dab9ff] block mb-1">
+                            Secuencia LPN que se asignará ({cantidadPallets} {cantidadPallets === 1 ? 'pallet' : 'pallets'}):
+                          </span>
+                          <div className="font-mono text-[11px] font-bold text-violet-900 dark:text-[#f2e6ff] flex items-center gap-1 flex-wrap">
+                            {cantidadPallets === 1 ? (
+                              <span className="px-1.5 py-0.5 rounded bg-white dark:bg-[#201f1f] border border-violet-200 dark:border-[#4b4452]">
+                                {baseLpnPrefix}/001
+                              </span>
+                            ) : (
+                              <>
+                                <span className="px-1.5 py-0.5 rounded bg-white dark:bg-[#201f1f] border border-violet-200 dark:border-[#4b4452]">
+                                  {baseLpnPrefix}/001
+                                </span>
+                                <span className="text-slate-400">...</span>
+                                <span className="px-1.5 py-0.5 rounded bg-white dark:bg-[#201f1f] border border-violet-200 dark:border-[#4b4452]">
+                                  {baseLpnPrefix}/{String(cantidadPallets).padStart(3, '0')}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-slate-600 dark:text-[#cdc3d4] flex items-center gap-2 pt-0.5">
+                        <Box className="w-4 h-4 text-slate-400 dark:text-[#978d9d] shrink-0" />
+                        <span>
+                          <strong>Recepción por bulto suelto:</strong> El stock se ingresa directamente a la posición de rack o estantería por bulto sin asociar un pallet.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. Selector de Ubicación Rack */}
+                  <div>
+                    <label className="text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] block mb-1">
+                      Ubicación Física Destino (Rack / Estante) <span className="text-rose-500">*</span>
+                    </label>
+                    {loadingUbicaciones ? (
+                      <div className="text-xs text-slate-500 dark:text-[#cdc3d4] py-1.5">Cargando posiciones de rack...</div>
+                    ) : (
+                      <select
+                        required
+                        value={ubicacionDestinoId}
+                        onChange={(e) => setUbicacionDestinoId(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] font-medium focus:border-violet-500 outline-none cursor-pointer"
+                      >
+                        <option value="" className="bg-white dark:bg-[#1c1b1b] text-slate-900 dark:text-[#e5e2e1]">Seleccione una ubicación en rack...</option>
+                        {ubicaciones.map((u) => (
+                          <option key={u.id} value={u.id} className="bg-white dark:bg-[#1c1b1b] text-slate-900 dark:text-[#e5e2e1]">
+                            {u.codigo_etiqueta} - {u.zona?.nombre || 'Zona'} (Pasillo {u.pasillo || '-'})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {activeDetalle.ubicacion_sugerida_id && (
+                      <p className="text-[10px] text-violet-600 dark:text-[#dab9ff] mt-1 flex items-center gap-1 font-semibold">
+                        <Sparkles className="w-3 h-3" />
+                        <span>Ubicación sugerida calculada según rotación de artículo</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 4. Resumen de Impacto Volumétrico y Kardex */}
+                  <div className="p-3 rounded-xl bg-violet-50 dark:bg-[#201330] border border-violet-200 dark:border-[#4b4452] text-[11px] text-slate-700 dark:text-[#cdc3d4] flex items-center justify-between font-mono">
                     <span>
-                      <strong>Recepción por bulto suelto:</strong> El stock se ingresa directamente a la posición de rack o estantería por bulto sin asociar un pallet.
+                      Volumen: <strong className="text-sky-600 dark:text-[#dab9ff]">{formatM3(volumenImpactado)}</strong>
+                    </span>
+                    <span>
+                      Peso: <strong className="text-slate-800 dark:text-[#e5e2e1]">{formatNumber(pesoImpactado)} kg</strong>
                     </span>
                   </div>
-                )}
-              </div>
+                </div>
 
-              {/* 3. Selector de Ubicación Rack */}
-              <div>
-                <label className="text-xs font-semibold text-slate-700 dark:text-[#cdc3d4] block mb-1">
-                  Ubicación Física Destino (Rack / Estante) <span className="text-rose-500">*</span>
-                </label>
-                {loadingUbicaciones ? (
-                  <div className="text-xs text-slate-500 dark:text-[#cdc3d4] py-1.5">Cargando posiciones de rack...</div>
-                ) : (
-                  <select
-                    required
-                    value={ubicacionDestinoId}
-                    onChange={(e) => setUbicacionDestinoId(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] font-medium focus:border-violet-500 outline-none cursor-pointer"
+                {/* Footer fijo con botón "Confirmar Todos" y acciones */}
+                <div className="p-3.5 bg-slate-50 dark:bg-[#201f1f] border-t border-slate-200 dark:border-[#333333] shrink-0 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={handleConfirmarTodosDesdeModal}
+                    disabled={isSubmitting}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-[#69f0ae] dark:hover:bg-[#8bfabf] dark:text-[#00381f] transition-all shadow-xs disabled:opacity-50"
+                    title="Recibir y conformar todos los renglones pendientes sin contar"
                   >
-                    <option value="" className="bg-white dark:bg-[#1c1b1b] text-slate-900 dark:text-[#e5e2e1]">Seleccione una ubicación en rack...</option>
-                    {ubicaciones.map((u) => (
-                      <option key={u.id} value={u.id} className="bg-white dark:bg-[#1c1b1b] text-slate-900 dark:text-[#e5e2e1]">
-                        {u.codigo_etiqueta} - {u.zona?.nombre || 'Zona'} (Pasillo {u.pasillo || '-'})
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {activeDetalle.ubicacion_sugerida_id && (
-                  <p className="text-[10px] text-violet-600 dark:text-[#dab9ff] mt-1 flex items-center gap-1 font-semibold">
-                    <Sparkles className="w-3 h-3" />
-                    <span>Ubicación sugerida calculada según rotación de artículo</span>
-                  </p>
-                )}
-              </div>
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Confirmar Todos</span>
+                  </button>
 
-              {/* 4. Resumen de Impacto Volumétrico y Kardex */}
-              <div className="p-3 rounded-xl bg-violet-50 dark:bg-[#201330] border border-violet-200 dark:border-[#4b4452] text-[11px] text-slate-700 dark:text-[#cdc3d4] flex items-center justify-between font-mono">
-                <span>
-                  Volumen: <strong className="text-sky-600 dark:text-[#dab9ff]">{formatM3(volumenImpactado)}</strong>
-                </span>
-                <span>
-                  Peso: <strong className="text-slate-800 dark:text-[#e5e2e1]">{formatNumber(pesoImpactado)} kg</strong>
-                </span>
-              </div>
-
-              {/* Botones de Acción */}
-              <div className="pt-2 flex items-center justify-end gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setPutawayModalOpen(false)}
-                  disabled={isSubmitting}
-                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-slate-300 dark:border-[#333333] bg-white hover:bg-slate-100 dark:bg-[#1c1b1b] dark:hover:bg-[#201f1f] text-slate-700 dark:text-[#cdc3d4] transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={
-                    isSubmitting ||
-                    !ubicacionDestinoId ||
-                    cantidadRecibida <= 0 ||
-                    (esPaletizado && !codigoLpn.trim())
-                  }
-                  className="px-5 py-2 text-xs font-semibold rounded-lg bg-violet-600 hover:bg-violet-700 text-white dark:bg-[#dab9ff] dark:hover:bg-[#eedbff] dark:text-[#460283] transition-colors disabled:opacity-40 flex items-center gap-1.5 shadow-sm"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Guardando en BD...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>Confirmar Guardado</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPutawayModalOpen(false)}
+                      disabled={isSubmitting}
+                      className="px-3.5 py-2 text-xs font-semibold rounded-lg border border-slate-300 dark:border-[#333333] bg-white hover:bg-slate-100 dark:bg-[#1c1b1b] dark:hover:bg-[#201f1f] text-slate-700 dark:text-[#cdc3d4] transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={
+                        isSubmitting ||
+                        !ubicacionDestinoId ||
+                        cantidadRecibida <= 0 ||
+                        (esPaletizado && !baseLpnPrefix.trim())
+                      }
+                      className="px-5 py-2 text-xs font-semibold rounded-lg bg-violet-600 hover:bg-violet-700 text-white dark:bg-[#dab9ff] dark:hover:bg-[#eedbff] dark:text-[#460283] transition-colors disabled:opacity-40 flex items-center gap-1.5 shadow-sm"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Guardando...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Confirmar Guardado</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
         </ModalPortal>
       )}
 

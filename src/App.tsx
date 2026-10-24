@@ -17,6 +17,7 @@ import { Sidebar, TabType } from './components/layout/Sidebar';
 import { TopHeader } from './components/layout/TopHeader';
 import { KpiCard } from './components/ui/KpiCard';
 import { PageTransition } from './components/ui/PageTransition';
+import { resetGlobalScrollLockIfNoModals } from './components/ui/ModalPortal';
 import { StorageVolumeChart } from './components/charts/StorageVolumeChart';
 import { FlowTrendsChart } from './components/charts/FlowTrendsChart';
 import { InventoryTable } from './components/inventory/InventoryTable';
@@ -79,6 +80,11 @@ export function App() {
 
   // Navigation tab
   const [currentTab, setCurrentTab] = useState<TabType>('overview');
+
+  // Asegurar que al navegar o cambiar de módulo nunca quede bloqueado el scroll si no hay modales abiertos
+  useEffect(() => {
+    resetGlobalScrollLockIfNoModals();
+  }, [currentTab]);
 
   // Sidebar collapse state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);

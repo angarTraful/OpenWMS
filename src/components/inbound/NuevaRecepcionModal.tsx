@@ -21,6 +21,7 @@ import {
   Clock,
   ExternalLink,
   Search,
+  AlertTriangle,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { formatM3, formatNumber } from '@/lib/utils';
@@ -50,7 +51,36 @@ interface ArticuloSearchPickerProps {
   onSelect: (articuloId: string) => void;
   onAddNew: () => void;
   disabled?: boolean;
+  otherLoadedRenglones?: Record<string, number>;
 }
+
+// Normalizador de texto para búsqueda flexible sin distinción de mayúsculas ni acentos
+const normalizeSearchText = (str?: string | number | null): string => {
+  return (str != null ? String(str) : '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+};
+
+const getArticuloSearchableText = (art: Articulo): string => {
+  const fullDesc = (art as any).descripcion_full || getDescripcionFull(art) || '';
+  const parts = [
+    art.nombre,
+    art.sku,
+    art.codigo_barras,
+    art.descripcion,
+    fullDesc,
+    (art as any).color,
+    (art as any).marca_bulto,
+    art.unidad_medida,
+    (art as any).tipo_empaque,
+    (art as any).categoria?.nombre,
+    (art as any).subcategoria?.nombre,
+    art.peso_unitario_kg ? `${art.peso_unitario_kg}kg` : '',
+    art.volumen_unitario_m3 ? `${art.volumen_unitario_m3}m3` : '',
+  ];
+  return normalizeSearchText(parts.filter(Boolean).join(' '));
+};
 
 const ArticuloSearchPicker: React.FC<ArticuloSearchPickerProps> = ({
   articulos,
@@ -58,9 +88,11 @@ const ArticuloSearchPicker: React.FC<ArticuloSearchPickerProps> = ({
   onSelect,
   onAddNew,
   disabled = false,
+  otherLoadedRenglones,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [hoveredArt, setHoveredArt] = useState<Articulo | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const selectedArt = useMemo(
@@ -68,81 +100,103 @@ const ArticuloSearchPicker: React.FC<ArticuloSearchPickerProps> = ({
     [articulos, selectedArticuloId]
   );
 
+  const getArticuloFullLabel = (art?: Articulo | null): string => {
+    if (!art) return '';
+    const desc = (art as any).descripcion_full || getDescripcionFull(art) || art.descripcion || art.nombre || '';
+    const parts: string[] = [];
+    if (art.nombre) parts.push(`[${art.nombre}]`);
+    if (desc && desc !== art.nombre) parts.push(desc);
+    if (art.sku && art.sku !== art.nombre) parts.push(`(SKU: ${art.sku})`);
+    if (art.unidad_medida) parts.push(`· ${art.unidad_medida}`);
+    if (art.peso_unitario_kg) parts.push(`· ${art.peso_unitario_kg} kg`);
+    if (art.volumen_unitario_m3) parts.push(`· ${art.volumen_unitario_m3} m³`);
+    return parts.join(' ');
+  };
+
+  // Filtrado integral por descripción, ítem, sku, código de barras, marca, color y categorías ("todo lo que se lea")
   const filtered = useMemo(() => {
-    if (!query.trim()) return articulos;
-    const q = query.toLowerCase();
-    return articulos.filter(
-      (a) =>
-        a.sku.toLowerCase().includes(q) ||
-        a.nombre.toLowerCase().includes(q) ||
-        (a.codigo_barras && a.codigo_barras.toLowerCase().includes(q))
-    );
+    const q = normalizeSearchText(query.trim());
+    if (!q) return articulos;
+    const terms = q.split(/\s+/).filter(Boolean);
+    return articulos.filter((a) => {
+      const text = getArticuloSearchableText(a);
+      return terms.every((term) => text.includes(term));
+    });
   }, [articulos, query]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
+        setHoveredArt(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const renglonDuplicadoSeleccionado = selectedArticuloId && otherLoadedRenglones ? otherLoadedRenglones[selectedArticuloId] : null;
+
   return (
     <div ref={containerRef} className="relative w-full">
-      <div className="flex items-center gap-1">
-        <div className="relative flex-1">
-          <input
-            type="text"
-            disabled={disabled}
-            value={isOpen ? query : (selectedArt ? selectedArt.nombre : query)}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              if (!isOpen) setIsOpen(true);
-            }}
-            onFocus={() => {
-              setIsOpen(true);
-              setQuery('');
-            }}
-            placeholder="Buscar código de artículo o descripción..."
-            className="w-full pl-7 pr-6 py-1.5 text-xs rounded border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] focus:border-violet-500 dark:focus:border-[#dab9ff] outline-none truncate font-medium placeholder:text-slate-400 dark:placeholder:text-[#6b6471]"
-          />
-          <Search className="w-3.5 h-3.5 text-slate-400 dark:text-[#978d9d] absolute left-2 top-2 pointer-events-none" />
-          {selectedArticuloId && !isOpen && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelect('');
-                setQuery('');
-              }}
-              className="absolute right-1.5 top-1.5 p-0.5 text-slate-400 dark:text-[#978d9d] hover:text-rose-500 dark:hover:text-[#ffb4ab] rounded"
-              title="Limpiar selección"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          )}
-        </div>
-
-        <button
-          type="button"
+      <div className="relative w-full">
+        <input
+          type="text"
           disabled={disabled}
-          onClick={onAddNew}
-          className="px-2 py-1.5 text-xs font-semibold rounded bg-violet-50 hover:bg-violet-100 dark:bg-[#201330] border border-violet-200 dark:border-[#6b21a8] text-violet-700 dark:text-[#dab9ff] transition-colors shrink-0 flex items-center gap-0.5"
-          title="Crear nuevo artículo en el catálogo maestro"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline text-[10px]">Nuevo</span>
-        </button>
+          value={isOpen ? query : (selectedArt ? selectedArt.nombre : query)}
+          title={selectedArt ? getArticuloFullLabel(selectedArt) : 'Buscar código de artículo, descripción, color o marca...'}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            if (!isOpen) setIsOpen(true);
+          }}
+          onFocus={() => {
+            setIsOpen(true);
+            setQuery('');
+          }}
+          placeholder="Buscar ítem, descripción, color..."
+          className={`w-full pl-7 pr-6 py-1.5 text-xs rounded border bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] outline-none truncate font-medium placeholder:text-slate-400 dark:placeholder:text-[#6b6471] ${
+            renglonDuplicadoSeleccionado
+              ? 'border-amber-400 dark:border-amber-600 focus:border-amber-500'
+              : 'border-slate-300 dark:border-[#333333] focus:border-violet-500 dark:focus:border-[#dab9ff]'
+          }`}
+        />
+        <Search className="w-3.5 h-3.5 text-slate-400 dark:text-[#978d9d] absolute left-2 top-2 pointer-events-none" />
+        {selectedArticuloId && !isOpen && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect('');
+              setQuery('');
+              setHoveredArt(null);
+            }}
+            className="absolute right-1.5 top-1.5 p-0.5 text-slate-400 dark:text-[#978d9d] hover:text-rose-500 dark:hover:text-[#ffb4ab] rounded"
+            title="Limpiar selección"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        )}
       </div>
 
+      {/* Advertencia si el ítem ya fue cargado en otro renglón */}
+      {renglonDuplicadoSeleccionado && !isOpen && (
+        <div className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-[#2b1f09] border border-amber-300 dark:border-amber-700/60 rounded px-1.5 py-0.5 animate-fadeIn">
+          <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+          <span>⚠️ Ya cargado en Renglón #{renglonDuplicadoSeleccionado}</span>
+        </div>
+      )}
+
       {isOpen && (
-        <div className="absolute left-0 top-full mt-1 w-full min-w-[280px] max-w-sm bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#4b4452] rounded-md shadow-2xl z-50 overflow-hidden text-xs animate-fadeIn">
+        <div
+          className="absolute left-0 top-full mt-1 w-max min-w-[340px] sm:min-w-[480px] max-w-xl bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#4b4452] rounded-lg shadow-2xl z-50 overflow-hidden text-xs animate-fadeIn"
+          onMouseLeave={() => setHoveredArt(null)}
+        >
+          {/* Primer renglón: Crear nuevo artículo en catálogo */}
           <button
             type="button"
             onClick={() => {
               setIsOpen(false);
+              setHoveredArt(null);
               onAddNew();
             }}
             className="w-full px-3 py-2 text-left text-xs font-bold text-violet-700 dark:text-[#dab9ff] bg-violet-50 hover:bg-violet-100 dark:bg-[#2a173d] dark:hover:bg-[#391e53] border-b border-slate-200 dark:border-[#4b4452] flex items-center gap-1.5 transition-colors"
@@ -151,37 +205,109 @@ const ArticuloSearchPicker: React.FC<ArticuloSearchPickerProps> = ({
             <span>✨ + Agregar nuevo artículo al catálogo...</span>
           </button>
 
-          <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-[#2a2a2a]">
+          {/* Lista de artículos disponibles */}
+          <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 dark:divide-[#2a2a2a]">
             {filtered.length === 0 ? (
               <div className="p-3 text-center text-slate-400 dark:text-[#978d9d] text-xs">
                 No se encontraron artículos con "{query}"
               </div>
             ) : (
-              filtered.map((art) => (
-                <button
-                  key={art.id}
-                  type="button"
-                  onClick={() => {
-                    onSelect(art.id);
-                    setIsOpen(false);
-                    setQuery('');
-                  }}
-                  className={`w-full px-3 py-2 text-left flex items-start gap-2 hover:bg-slate-50 dark:hover:bg-[#26242a] transition-colors ${art.id === selectedArticuloId ? 'bg-violet-50 text-violet-700 dark:bg-[#2a173d]/60 dark:text-[#dab9ff]' : 'text-slate-800 dark:text-[#e5e2e1]'
-                    }`}
-                >
-                  <span className="font-mono font-bold text-violet-700 dark:text-[#dab9ff] bg-slate-100 dark:bg-[#131313] px-1.5 py-0.5 rounded border border-slate-200 dark:border-[#333333] text-[10px] shrink-0">
-                    {art.nombre}
-                  </span>
-                  <div className="truncate flex-1">
-                    <div className="font-medium truncate text-xs">{(art as any).descripcion_full || getDescripcionFull(art) || art.descripcion || art.nombre}</div>
-                    <div className="text-[10px] text-slate-400 dark:text-[#978d9d]">
-                      {art.unidad_medida || 'UN'} {art.peso_unitario_kg ? `· ${art.peso_unitario_kg} kg` : ''} {art.volumen_unitario_m3 ? `· ${art.volumen_unitario_m3} m³` : ''}
+              filtered.map((art) => {
+                const fullLabel = getArticuloFullLabel(art);
+                const desc = (art as any).descripcion_full || getDescripcionFull(art) || art.descripcion || art.nombre;
+                const renglonOcupado = otherLoadedRenglones ? otherLoadedRenglones[art.id] : null;
+
+                return (
+                  <button
+                    key={art.id}
+                    type="button"
+                    title={fullLabel}
+                    onMouseEnter={() => setHoveredArt(art)}
+                    onClick={() => {
+                      onSelect(art.id);
+                      setIsOpen(false);
+                      setQuery('');
+                      setHoveredArt(null);
+                    }}
+                    className={`w-full px-3 py-2 text-left flex items-start gap-2.5 hover:bg-violet-50/70 dark:hover:bg-[#26242a] transition-colors group ${art.id === selectedArticuloId
+                      ? 'bg-violet-50 text-violet-700 dark:bg-[#2a173d]/60 dark:text-[#dab9ff]'
+                      : 'text-slate-800 dark:text-[#e5e2e1]'
+                      }`}
+                  >
+                    <span className="font-mono font-bold text-violet-700 dark:text-[#dab9ff] bg-slate-100 dark:bg-[#131313] px-1.5 py-0.5 rounded border border-slate-200 dark:border-[#333333] text-[10px] shrink-0 mt-0.5">
+                      {art.nombre}
+                    </span>
+                    <div className="flex-1 min-w-0" title={fullLabel}>
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="font-medium text-xs truncate group-hover:text-violet-700 dark:group-hover:text-[#dab9ff]">
+                          {desc}
+                        </span>
+                        {renglonOcupado && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.2 text-[9px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 border border-amber-300 dark:border-amber-700/60 rounded shrink-0">
+                            <AlertTriangle className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" />
+                            Ya en Renglón #{renglonOcupado}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-400 dark:text-[#978d9d] flex items-center gap-1.5 flex-wrap mt-0.5">
+                        {art.sku && art.sku !== art.nombre && <span>SKU: {art.sku} ·</span>}
+                        <span>{art.unidad_medida || 'UN'}</span>
+                        {art.peso_unitario_kg ? <span>· {art.peso_unitario_kg} kg</span> : null}
+                        {art.volumen_unitario_m3 ? <span>· {art.volumen_unitario_m3} m³</span> : null}
+                        {(art as any).color && <span>· Color: {(art as any).color}</span>}
+                        {(art as any).marca_bulto && <span>· Marca: {(art as any).marca_bulto}</span>}
+                      </div>
                     </div>
-                  </div>
-                </button>
-              ))
+                  </button>
+                );
+              })
             )}
           </div>
+
+          {/* Banner con etiqueta completa al pasar el cursor (Hover Control) */}
+          {hoveredArt && (
+            <div className="p-2.5 bg-slate-50 dark:bg-[#151416] border-t border-slate-200 dark:border-[#333333] text-xs animate-fadeIn">
+              {otherLoadedRenglones && otherLoadedRenglones[hoveredArt.id] && (
+                <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold text-amber-800 dark:text-amber-300 bg-amber-100/90 dark:bg-[#2b1f09] border border-amber-300 dark:border-amber-700/60 rounded px-2 py-0.5">
+                  <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>⚠️ Advertencia: Este artículo ya fue cargado en el Renglón #{otherLoadedRenglones[hoveredArt.id]}</span>
+                </div>
+              )}
+              <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-violet-700 dark:text-[#dab9ff]">
+                <span className="px-1.5 py-0.5 rounded bg-violet-100 dark:bg-[#201330] border border-violet-200 dark:border-[#6b21a8]/60">
+                  {hoveredArt.nombre}
+                </span>
+                {hoveredArt.sku && hoveredArt.sku !== hoveredArt.nombre && (
+                  <span className="text-slate-500 font-normal">SKU: {hoveredArt.sku}</span>
+                )}
+                <span className="text-[10px] text-slate-400 font-normal ml-auto">
+                  Etiqueta Completa
+                </span>
+              </div>
+              <p className="font-semibold text-xs mt-1 text-slate-900 dark:text-[#e5e2e1] whitespace-normal leading-relaxed break-words">
+                {(hoveredArt as any).descripcion_full || getDescripcionFull(hoveredArt) || hoveredArt.descripcion || hoveredArt.nombre}
+              </p>
+              <div className="text-[10px] text-slate-500 dark:text-[#978d9d] mt-1 flex items-center gap-2 font-mono flex-wrap">
+                <span>Unidad: {hoveredArt.unidad_medida || 'UN'}</span>
+                <span>·</span>
+                <span>Peso: {hoveredArt.peso_unitario_kg || 0} kg</span>
+                <span>·</span>
+                <span>Volumen: {hoveredArt.volumen_unitario_m3 || 0} m³</span>
+                {(hoveredArt as any).color && (
+                  <>
+                    <span>·</span>
+                    <span>Color: {(hoveredArt as any).color}</span>
+                  </>
+                )}
+                {(hoveredArt as any).marca_bulto && (
+                  <>
+                    <span>·</span>
+                    <span>Marca: {(hoveredArt as any).marca_bulto}</span>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -640,23 +766,6 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
 
           {/* Modal Content Scrollable */}
           <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
-            {/* Feedback Banner */}
-            {feedback && (
-              <div
-                className={`p-2.5 rounded text-xs font-medium flex items-center gap-2.5 ${feedback.type === 'success'
-                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-[#0f241a] dark:text-[#75d1ff] dark:border-[#1d4d38]'
-                  : 'bg-rose-50 text-rose-800 border border-rose-200 dark:bg-[#2a0e12] dark:text-[#ffb4ab] dark:border-[#690005]'
-                  }`}
-              >
-                {feedback.type === 'success' ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-[#75d1ff]" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-[#ffb4ab]" />
-                )}
-                <span>{feedback.message}</span>
-              </div>
-            )}
-
             {/* Bloque 1: Datos de Cabecera (Transporte, Lote de Operación, Fecha/Hora y Tipo CNTR) */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -940,16 +1049,6 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
                     Lote unificado del ingreso: <strong className="font-mono text-violet-700 dark:text-[#dab9ff]">{loteOperacion || numeroRecepcion}</strong>
                   </p>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={agregarRenglon}
-                  disabled={!clienteId}
-                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-violet-600 hover:bg-violet-700 text-white dark:bg-[#dab9ff] dark:hover:bg-[#eedbff] dark:text-[#460283] transition-colors disabled:opacity-40 shadow-sm"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Agregar Renglón</span>
-                </button>
               </div>
 
               {loadingArticulos ? (
@@ -975,7 +1074,7 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
                 <div className="space-y-1">
                   {/* Encabezado compacto de tabla para desktop */}
                   <div className="hidden sm:grid grid-cols-12 gap-2 px-3 py-1.5 text-[10px] font-semibold text-slate-600 dark:text-[#cdc3d4] uppercase tracking-wider bg-slate-100 dark:bg-[#171616] rounded border border-slate-200 dark:border-[#2a2a2a]">
-                    <div className="col-span-3">Buscador / + Nuevo</div>
+                    <div className="col-span-3">Buscador de Artículo</div>
                     <div className="col-span-5">Artículo (Descripción & Ficha)</div>
                     <div className="col-span-2 text-center">Cant. a Ingresar</div>
                     <div className="col-span-1 text-right">Subtotal</div>
@@ -989,10 +1088,28 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
                     const volSubtotal = cant * Number(artSel?.volumen_unitario_m3 || 0);
                     const pesoSubtotal = cant * Number(artSel?.peso_unitario_kg || 0);
 
+                    // Detectar si el artículo de este renglón ya fue cargado en otro renglón
+                    const otherRenglonIndex = renglon.articulo_id
+                      ? renglones.findIndex((r, idx) => idx !== index && r.articulo_id === renglon.articulo_id)
+                      : -1;
+                    const yaExisteEnRenglon = otherRenglonIndex !== -1 ? otherRenglonIndex + 1 : null;
+
+                    // Mapeo de artículos cargados en otros renglones para avisar en el buscador
+                    const otherLoadedRenglones: Record<string, number> = {};
+                    renglones.forEach((r, idx) => {
+                      if (idx !== index && r.articulo_id && !otherLoadedRenglones[r.articulo_id]) {
+                        otherLoadedRenglones[r.articulo_id] = idx + 1;
+                      }
+                    });
+
                     return (
                       <div
                         key={renglon.id}
-                        className="p-1.5 sm:px-3 sm:py-2 rounded border border-slate-200 dark:border-[#333333] bg-slate-50/80 dark:bg-[#201f1f] grid grid-cols-1 sm:grid-cols-12 gap-2 items-center hover:border-slate-300 dark:hover:border-[#4b4452] transition-colors"
+                        className={`p-1.5 sm:px-3 sm:py-2 rounded border grid grid-cols-1 sm:grid-cols-12 gap-2 items-center transition-colors ${
+                          yaExisteEnRenglon
+                            ? 'border-amber-300 dark:border-amber-700/80 bg-amber-50/40 dark:bg-amber-950/20'
+                            : 'border-slate-200 dark:border-[#333333] bg-slate-50/80 dark:bg-[#201f1f] hover:border-slate-300 dark:hover:border-[#4b4452]'
+                        }`}
                       >
                         {/* 1. Buscador de Artículos o Agregar Nuevo */}
                         <div className="sm:col-span-3">
@@ -1004,18 +1121,29 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
                               setTargetRenglonId(renglon.id);
                               setModalArticuloOpen(true);
                             }}
+                            otherLoadedRenglones={otherLoadedRenglones}
                           />
                         </div>
 
                         {/* 2. Columna Principal: Ficha / Detalle del Artículo */}
                         <div className="sm:col-span-5 min-w-0">
                           {artSel ? (
-                            <div className="p-1 px-2.5 rounded bg-white dark:bg-[#131313] border border-slate-200 dark:border-[#333333] flex flex-col justify-center shadow-sm">
+                            <div
+                              className={`p-1 px-2.5 rounded bg-white dark:bg-[#131313] border flex flex-col justify-center shadow-sm cursor-help ${
+                                yaExisteEnRenglon
+                                  ? 'border-amber-300 dark:border-amber-700/80 ring-1 ring-amber-300/40 dark:ring-amber-500/20'
+                                  : 'border-slate-200 dark:border-[#333333]'
+                              }`}
+                              title={`[${artSel.nombre}] ${(artSel as any).descripcion_full || getDescripcionFull(artSel) || artSel.descripcion || artSel.nombre}${artSel.unidad_medida ? ` · ${artSel.unidad_medida}` : ''}`}
+                            >
                               <div className="flex items-center gap-1.5 min-w-0">
                                 <span className="font-mono text-[10px] font-bold px-1.5 py-0.2 rounded bg-violet-100 dark:bg-[#201330] text-violet-700 dark:text-[#dab9ff] border border-violet-200 dark:border-[#6b21a8]/60 shrink-0">
                                   {artSel.nombre}
                                 </span>
-                                <span className="font-semibold text-xs text-slate-900 dark:text-[#e5e2e1] truncate" title={(artSel as any).descripcion_full || getDescripcionFull(artSel) || artSel.descripcion || artSel.nombre}>
+                                <span
+                                  className="font-semibold text-xs text-slate-900 dark:text-[#e5e2e1] truncate"
+                                  title={`[${artSel.nombre}] ${(artSel as any).descripcion_full || getDescripcionFull(artSel) || artSel.descripcion || artSel.nombre}`}
+                                >
                                   {(artSel as any).descripcion_full || getDescripcionFull(artSel) || artSel.descripcion || artSel.nombre}
                                 </span>
                                 {(artSel as any).color && (
@@ -1039,6 +1167,13 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
                                   </>
                                 )}
                               </div>
+                              {/* Advertencia si este ítem ya se cargó en otro renglón */}
+                              {yaExisteEnRenglon && (
+                                <div className="mt-1 flex items-center gap-1.5 text-[10px] font-semibold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/70 border border-amber-300 dark:border-amber-700/60 rounded px-2 py-0.5 animate-fadeIn">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                                  <span>⚠️ Advertencia: Este artículo ya fue cargado en el Renglón #{yaExisteEnRenglon}</span>
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <div className="p-2 rounded border border-dashed border-slate-300 dark:border-[#44424a] text-center text-xs text-slate-500 dark:text-[#978d9d] italic flex items-center justify-center gap-1.5">
@@ -1060,6 +1195,12 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
                               onChange={(e) =>
                                 actualizarRenglon(renglon.id, 'cantidad_esperada', Math.max(0, Number(e.target.value)))
                               }
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  agregarRenglon();
+                                }
+                              }}
                               className="w-full sm:w-28 px-2 py-1.5 text-xs text-center rounded border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] font-mono font-bold focus:border-violet-500 dark:focus:border-[#dab9ff] outline-none"
                               placeholder="0"
                             />
@@ -1091,6 +1232,24 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
                       </div>
                     );
                   })}
+
+                  {/* Botón "+ Agregar Renglón" posicionado abajo del item agregado y alineado a la columna de Cantidad */}
+                  <div className="pt-2 pb-1 flex flex-col sm:grid sm:grid-cols-12 sm:gap-2 items-center">
+                    <div className="hidden sm:block sm:col-span-8" />
+                    <div className="w-full sm:col-span-4 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={agregarRenglon}
+                        disabled={!clienteId}
+                        className="w-full sm:w-38 flex items-center justify-center gap-1 px-2.5 py-1.5 text-xs font-bold rounded-lg bg-violet-600 hover:bg-violet-700 text-white dark:bg-[#dab9ff] dark:hover:bg-[#eedbff] dark:text-[#460283] transition-all shadow-sm active:scale-95 disabled:opacity-40"
+                        title="Agregar nuevo item (o presione Enter en Cantidad)"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span> Agregar Renglón Items</span>
+                      </button>
+                    </div>
+                    <div className="hidden sm:block sm:col-span-2" />
+                  </div>
                 </div>
               )}
 
@@ -1129,7 +1288,7 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
                   <div>
                     <div className="text-xs font-semibold text-slate-900 dark:text-[#e5e2e1] flex items-center gap-1.5">
                       <span>⚡ Fast Inbound (Ingreso directo a stock sin confronta)</span>
-                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-violet-600 text-white dark:bg-[#460283] dark:text-[#dab9ff] font-mono">
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-violet-600 text-white dark:bg-[#460283] dark:text-[#dab9ff] font-mono">
                         Directo
                       </span>
                     </div>
@@ -1167,7 +1326,7 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
                     type="text"
                     value={despachoAduana}
                     onChange={(e) => setDespachoAduana(e.target.value.toUpperCase())}
-                    placeholder="Ej: 26001IC04001234K / Despacho a Plaza"
+                    placeholder="Ej: 26001IC04001234K / Origen Fecha.de.Oficializacion"
                     className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] font-mono focus:border-violet-500 dark:focus:border-[#dab9ff] outline-none"
                   />
                 </div>
@@ -1319,47 +1478,76 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
             </div>
           </form>
 
-          {/* Modal Footer */}
-          <div className="p-3.5 bg-slate-50 dark:bg-[#201f1f] border-t border-slate-200 dark:border-[#333333] flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="text-xs text-slate-600 dark:text-[#cdc3d4] flex items-center gap-2">
-              <span>Lote: <strong className="font-mono text-violet-700 dark:text-[#dab9ff]">{loteOperacion || numeroRecepcion}</strong></span>
-              <span>•</span>
-              <span>CNTR: <strong className="text-slate-900 dark:text-[#e5e2e1]">{tipoContenedor}</strong></span>
-            </div>
-
-            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-              <button
-                type="button"
-                onClick={onClose}
-                disabled={isSubmitting}
-                className="px-4 py-1.5 text-xs font-semibold rounded border border-slate-300 dark:border-[#333333] bg-white hover:bg-slate-100 dark:bg-[#1c1b1b] dark:hover:bg-[#2a2a2a] text-slate-700 dark:text-[#cdc3d4] hover:text-slate-900 dark:hover:text-[#e5e2e1] transition-colors"
+          {/* Modal Footer - Con validador de feedback posicionado junto a los botones de acción */}
+          <div className="p-3.5 bg-slate-50 dark:bg-[#201f1f] border-t border-slate-200 dark:border-[#333333] flex flex-col gap-2.5">
+            {/* Validador de éxito o error al pie de la ventana */}
+            {feedback && (
+              <div
+                className={`p-2.5 rounded text-xs font-medium flex items-center justify-between gap-2.5 animate-fadeIn shadow-sm ${feedback.type === 'success'
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 dark:bg-[#0f241a] dark:text-[#75d1ff] dark:border-[#1d4d38]'
+                  : 'bg-rose-50 text-rose-800 border border-rose-300 dark:bg-[#2a0e12] dark:text-[#ffb4ab] dark:border-[#690005]'
+                  }`}
               >
-                Cancelar
-              </button>
+                <div className="flex items-center gap-2 min-w-0">
+                  {feedback.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-[#75d1ff]" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-[#ffb4ab]" />
+                  )}
+                  <span className="break-words">{feedback.message}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFeedback(null)}
+                  className="p-1 rounded text-slate-400 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/10 transition-colors shrink-0"
+                  title="Cerrar mensaje"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={isSubmitting || renglones.length === 0}
-                className="px-5 py-1.5 text-xs font-semibold rounded bg-violet-600 hover:bg-violet-700 text-white dark:bg-[#dab9ff] dark:hover:bg-[#eedbff] dark:text-[#460283] transition-colors disabled:opacity-40 flex items-center gap-1.5 shadow-sm"
-              >
-                {isSubmitting ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>{recibirDirecto ? 'Ingresando a Stock...' : 'Programando Orden...'}</span>
-                  </>
-                ) : recibirDirecto ? (
-                  <>
-                    <Zap className="w-4 h-4" />
-                    <span>Crear y Recibir Directo a Stock</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Crear Orden Programada</span>
-                  </>
-                )}
-              </button>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-xs text-slate-600 dark:text-[#cdc3d4] flex items-center gap-2">
+                <span>Lote: <strong className="font-mono text-violet-700 dark:text-[#dab9ff]">{loteOperacion || numeroRecepcion}</strong></span>
+                <span>•</span>
+                <span>CNTR: <strong className="text-slate-900 dark:text-[#e5e2e1]">{tipoContenedor}</strong></span>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={isSubmitting}
+                  className="px-4 py-1.5 text-xs font-semibold rounded border border-slate-300 dark:border-[#333333] bg-white hover:bg-slate-100 dark:bg-[#1c1b1b] dark:hover:bg-[#2a2a2a] text-slate-700 dark:text-[#cdc3d4] hover:text-slate-900 dark:hover:text-[#e5e2e1] transition-colors"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={isSubmitting || renglones.length === 0}
+                  className="px-5 py-1.5 text-xs font-semibold rounded bg-violet-600 hover:bg-violet-700 text-white dark:bg-[#dab9ff] dark:hover:bg-[#eedbff] dark:text-[#460283] transition-colors disabled:opacity-40 flex items-center gap-1.5 shadow-sm"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>{recibirDirecto ? 'Ingresando a Stock...' : 'Programando Orden...'}</span>
+                    </>
+                  ) : recibirDirecto ? (
+                    <>
+                      <Zap className="w-4 h-4" />
+                      <span>Crear y Recibir Directo a Stock</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Crear Orden Programada</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1382,13 +1570,13 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
                 </div>
                 <div>
                   <label className="text-[11px] text-slate-600 dark:text-[#cdc3d4] block mb-1">
-                    Descripción del tipo (ej: 45' High Cube, 20' Open Top, Reefer 40')
+                    Descripción del tipo (ej: 40' High Cube, 20' Open Top, Reefer 40')
                   </label>
                   <input
                     type="text"
                     value={nuevoTipoTexto}
                     onChange={(e) => setNuevoTipoTexto(e.target.value)}
-                    placeholder="Ej: 45' High Cube"
+                    placeholder="Ej: 40' High Cube Carga Paletizada"
                     className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-300 dark:border-[#333333] bg-white dark:bg-[#131313] text-slate-900 dark:text-[#e5e2e1] focus:border-violet-500 dark:focus:border-[#dab9ff] outline-none"
                     autoFocus
                     onKeyDown={(e) => {

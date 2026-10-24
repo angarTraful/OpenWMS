@@ -17,6 +17,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { ProgramacionItem } from '@/api/programacionApi';
+import { ModalPortal } from '@/components/ui/ModalPortal';
 
 interface DocumentoVisorModalProps {
   isOpen: boolean;
@@ -49,7 +50,8 @@ export const DocumentoVisorModal: React.FC<DocumentoVisorModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+    <ModalPortal onClose={onClose}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
       <div className="relative w-full max-w-2xl bg-white dark:bg-[#1a1919] border border-slate-300 dark:border-[#333333] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header (No imprimible) */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-200 dark:border-[#2a2a2a] bg-slate-50 dark:bg-[#1f1e1e] print:hidden">
@@ -383,5 +385,6 @@ export const DocumentoVisorModal: React.FC<DocumentoVisorModalProps> = ({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 };

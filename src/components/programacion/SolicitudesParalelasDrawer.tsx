@@ -20,6 +20,7 @@ import {
   ProgramacionItem,
 } from '@/api/programacionApi';
 import { exportToCSV } from '@/lib/exportExcelUtils';
+import { ModalPortal } from '@/components/ui/ModalPortal';
 
 interface SolicitudesParalelasDrawerProps {
   isOpen: boolean;
@@ -117,7 +118,8 @@ export const SolicitudesParalelasDrawer: React.FC<SolicitudesParalelasDrawerProp
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+    <ModalPortal onClose={onClose}>
+      <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
       <div className="relative w-full max-w-xl h-full bg-white dark:bg-[#1a1919] border-l border-slate-300 dark:border-[#333333] shadow-2xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 dark:border-[#2a2a2a] bg-slate-50 dark:bg-[#1f1e1e]">
@@ -387,5 +389,6 @@ export const SolicitudesParalelasDrawer: React.FC<SolicitudesParalelasDrawerProp
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 };
