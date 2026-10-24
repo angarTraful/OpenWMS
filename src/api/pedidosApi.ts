@@ -1,8 +1,31 @@
 import { supabase } from './supabaseClient';
 import type { Database } from '../../types/database.types';
+import { notifyDataChanged } from '../lib/dataSync';
 
 export type Pedido = Database['public']['Tables']['pedidos']['Row'];
 export type PedidoInsert = Database['public']['Tables']['pedidos']['Insert'];
+
+export interface DetallePedidoItemRespuesta {
+  articulo_nombre: string;
+  articulo_descripcion: string;
+  sku?: string;
+  lote_id: string | null;
+  numero_lote?: string | null;
+  cantidad: number;
+  m3: number;
+  tipo_bulto: string;
+}
+
+export interface DetallePedidoRespuesta {
+  encontrado?: boolean;
+  pedido_id: string;
+  numero_pedido_cliente: string;
+  numero_pedido_wms?: string;
+  fecha_compromiso_entrega: string | null;
+  destinatario_nombre: string;
+  destinatario_direccion_full: string;
+  pedidos_detalle: DetallePedidoItemRespuesta[];
+}
 
 export const pedidosApi = {
   async listarPedidos(clienteId?: string) {
@@ -83,7 +106,12 @@ export const pedidosApi = {
           detalles:pedidos_detalle(
             *,
             articulo:articulos(*),
-            tareas_picking:tareas_picking(*)
+            tareas_picking:tareas_picking(
+              *,
+              lote:lotes_cliente(id, numero_lote, fecha_vencimiento),
+              ubicacion_origen:ubicaciones(id, codigo_etiqueta, pasillo, estante, nivel),
+              pallet_origen:pallets_lpn(id, codigo_lpn)
+            )
           )
         `)
         .eq('id', pedidoId)
@@ -110,7 +138,12 @@ export const pedidosApi = {
         detalles:pedidos_detalle(
           *,
           articulo:articulos(*),
-          tareas_picking:tareas_picking(*)
+          tareas_picking:tareas_picking(
+            *,
+            lote:lotes_cliente(id, numero_lote, fecha_vencimiento),
+            ubicacion_origen:ubicaciones(id, codigo_etiqueta, pasillo, estante, nivel),
+            pallet_origen:pallets_lpn(id, codigo_lpn)
+          )
         )
       `)
       .eq('id', pedidoId)
@@ -136,11 +169,161 @@ export const pedidosApi = {
     return fbData;
   },
 
+  // --- Consulta de Pedido con Artículos y Dirección Full (detallePedidoPorId) ---
+  async detallePedidoPorId(
+    paramOrId: string | { idPedido?: string; nombrePedidoCliente?: string; clienteCodigo?: string },
+    clienteCodigoParam?: string
+  ): Promise<DetallePedidoRespuesta | null> {
+    let idPedido: string | undefined;
+    let nombrePedidoCliente: string | undefined;
+    let clienteCodigo: string | undefined = clienteCodigoParam;
+
+    if (typeof paramOrId === 'string') {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(paramOrId.trim());
+      if (isUuid) {
+        idPedido = paramOrId.trim();
+      } else {
+        nombrePedidoCliente = paramOrId.trim();
+      }
+    } else if (paramOrId && typeof paramOrId === 'object') {
+      idPedido = paramOrId.idPedido;
+      nombrePedidoCliente = paramOrId.nombrePedidoCliente;
+      clienteCodigo = paramOrId.clienteCodigo || clienteCodigoParam;
+    }
+
+    // 1. Intentar RPC nativo de Supabase
+    try {
+      const { data: rpcData, error: rpcError } = await (supabase.rpc as any)(
+        'wms_obtener_detalle_pedido_por_id',
+        {
+          p_pedido_id: idPedido || null,
+          p_pedido_cliente: nombrePedidoCliente || null,
+          p_cliente_codigo: clienteCodigo || null,
+        }
+      );
+
+      if (!rpcError && rpcData) {
+        if (rpcData.encontrado === false || rpcData.error) {
+          return null;
+        }
+        return rpcData as DetallePedidoRespuesta;
+      }
+      if (rpcError) {
+        console.warn('Fallback en detallePedidoPorId (RPC no disponible):', rpcError.message);
+      }
+    } catch (e) {
+      console.warn('Excepción llamando wms_obtener_detalle_pedido_por_id:', e);
+    }
+
+    // 2. Fallback local directo en TypeScript sobre tablas de Supabase
+    try {
+      let resolvedPedidoId = idPedido;
+
+      if (!resolvedPedidoId && nombrePedidoCliente) {
+        let clienteId: string | undefined;
+        if (clienteCodigo) {
+          const isCliUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clienteCodigo.trim());
+          if (isCliUuid) {
+            clienteId = clienteCodigo.trim();
+          } else {
+            const { data: cli } = await supabase
+              .from('clientes')
+              .select('id')
+              .or(`codigo.ilike.${clienteCodigo.trim()},razon_social.ilike.${clienteCodigo.trim()}`)
+              .limit(1)
+              .maybeSingle();
+            if (cli) clienteId = cli.id;
+          }
+        }
+
+        let q = supabase
+          .from('pedidos')
+          .select('id')
+          .or(`orden_compra_cliente.ilike.${nombrePedidoCliente.trim()},numero_pedido.ilike.${nombrePedidoCliente.trim()}`);
+
+        if (clienteId) {
+          q = q.eq('cliente_id', clienteId);
+        }
+
+        const { data: foundPed } = await q.order('creado_en', { ascending: false }).limit(1).maybeSingle();
+        if (foundPed) {
+          resolvedPedidoId = foundPed.id;
+        }
+      }
+
+      if (!resolvedPedidoId) return null;
+
+      const { data: pedData, error: pedErr } = await supabase
+        .from('pedidos')
+        .select(`
+          id,
+          numero_pedido,
+          orden_compra_cliente,
+          fecha_compromiso_entrega,
+          cliente_id,
+          destinatario:destinatarios(id, razon_social, direccion_entrega, localidad, ciudad),
+          detalles:pedidos_detalle(
+            id,
+            cantidad_solicitada,
+            articulo:articulos(id, nombre, descripcion, sku, unidad_medida, volumen_unitario_m3),
+            tareas_picking:tareas_picking(id, lote_id, lotes_cliente:lotes_cliente(id, numero_lote))
+          )
+        `)
+        .eq('id', resolvedPedidoId)
+        .single();
+
+      if (pedErr || !pedData) return null;
+
+      const dest = (pedData as any).destinatario;
+      const direccionPartes = [
+        dest?.direccion_entrega,
+        dest?.localidad,
+        dest?.ciudad,
+      ].filter(Boolean);
+      const direccionFull = direccionPartes.join(', ');
+
+      const items: DetallePedidoItemRespuesta[] = ((pedData as any).detalles || []).map((d: any) => {
+        const art = d.articulo;
+        const cant = Number(d.cantidad_solicitada || 0);
+        const volUnit = Number(art?.volumen_unitario_m3 || 0);
+        const m3Total = Math.round(cant * volUnit * 10000) / 10000;
+        const tp = Array.isArray(d.tareas_picking) && d.tareas_picking.length > 0 ? d.tareas_picking[0] : null;
+
+        return {
+          articulo_nombre: art?.nombre || 'Artículo sin nombre',
+          articulo_descripcion: art?.descripcion || art?.nombre || '',
+          sku: art?.sku,
+          lote_id: tp?.lote_id || null,
+          numero_lote: tp?.lotes_cliente?.numero_lote || null,
+          cantidad: cant,
+          m3: m3Total,
+          tipo_bulto: art?.unidad_medida || 'bulto',
+        };
+      });
+
+      return {
+        encontrado: true,
+        pedido_id: pedData.id,
+        numero_pedido_cliente: pedData.orden_compra_cliente || pedData.numero_pedido,
+        numero_pedido_wms: pedData.numero_pedido,
+        fecha_compromiso_entrega: pedData.fecha_compromiso_entrega,
+        destinatario_nombre: dest?.razon_social || 'Destinatario no especificado',
+        destinatario_direccion_full: direccionFull,
+        pedidos_detalle: items,
+      };
+    } catch (errFallback) {
+      console.error('Error en fallback local de detallePedidoPorId:', errFallback);
+      return null;
+    }
+  },
+
   async crearPedido(
     pedido: PedidoInsert,
     detalles: Array<{
       articulo_id: string;
       cantidad_solicitada: number;
+      lote_id?: string | null;
+      ubicacion_id?: string | null;
     }>
   ) {
     let nuevoPedido: any = null;
@@ -167,30 +350,59 @@ export const pedidosApi = {
     if (errPedido) throw errPedido;
 
     const renglones = detalles.map((d) => ({
-      ...d,
-      pedido_id: nuevoPedido.id
+      pedido_id: nuevoPedido.id,
+      articulo_id: d.articulo_id,
+      cantidad_solicitada: Number(d.cantidad_solicitada),
+      ...(d.lote_id ? { lote_id: d.lote_id } : {}),
+      ...(d.ubicacion_id ? { ubicacion_id: d.ubicacion_id } : {}),
     }));
 
-    const { data: detallesInsertados, error: errDetalles } = await supabase
+    let { data: detallesInsertados, error: errDetalles } = await supabase
       .from('pedidos_detalle')
       .insert(renglones)
       .select();
+
+    // Si falla por columnas lote_id o ubicacion_id aún no aplicadas en la base de datos, fallback a renglones base
+    if (
+      errDetalles &&
+      (errDetalles.message?.includes('lote_id') ||
+        errDetalles.message?.includes('ubicacion_id') ||
+        errDetalles.message?.includes('schema cache'))
+    ) {
+      console.warn('Fallback en pedidos_detalle sin columnas lote_id/ubicacion_id:', errDetalles.message);
+      const renglonesBase = detalles.map((d) => ({
+        pedido_id: nuevoPedido.id,
+        articulo_id: d.articulo_id,
+        cantidad_solicitada: Number(d.cantidad_solicitada),
+      }));
+      const retry = await supabase.from('pedidos_detalle').insert(renglonesBase).select();
+      detallesInsertados = retry.data;
+      errDetalles = retry.error;
+    }
+
     if (errDetalles) throw errDetalles;
 
+    notifyDataChanged();
     return { pedido: nuevoPedido, detalles: detallesInsertados };
   },
 
-  // --- RPC: Asignación y Reserva Automática FEFO/FIFO ---
-  async asignarPickingFEFO(pedidoId: string, estrategia: 'FEFO' | 'FIFO' = 'FEFO') {
+  // --- RPC: Asignación y Reserva Automática FEFO/FIFO con soporte de lotes manuales ---
+  async asignarPickingFEFO(
+    pedidoId: string,
+    estrategia: 'FEFO' | 'FIFO' = 'FEFO',
+    asignacionesManuales?: any[]
+  ) {
     const { data, error } = await supabase.rpc('wms_asignar_picking_fefo', {
       p_pedido_id: pedidoId,
       p_estrategia: estrategia,
+      p_asignaciones_manuales: (asignacionesManuales && asignacionesManuales.length > 0) ? (asignacionesManuales as any) : ([] as any),
     });
     if (error) throw error;
+    notifyDataChanged();
     return data;
   },
 
-  // --- Asignación Integral: Estrategia FEFO/FIFO + Asignación de Operador, Supervisor y Controller ---
+  // --- Asignación Integral: Estrategia FEFO/FIFO + Asignación de Roles + Lotes Hardcodeados ---
   async asignarPickingConEstrategia(params: {
     pedidoId: string;
     estrategia: 'FEFO' | 'FIFO';
@@ -200,11 +412,13 @@ export const pedidosApi = {
     operadorNombre?: string;
     supervisorNombre?: string;
     controllerNombre?: string;
+    asignacionesManuales?: any[];
   }) {
-    // 1. Ejecutar alocación de stock con la estrategia elegida
+    // 1. Ejecutar alocación de stock con la estrategia elegida y posibles lotes hardcodeados
     const { data: resRpc, error: errRpc } = await supabase.rpc('wms_asignar_picking_fefo', {
       p_pedido_id: params.pedidoId,
       p_estrategia: params.estrategia,
+      p_asignaciones_manuales: (params.asignacionesManuales && params.asignacionesManuales.length > 0) ? (params.asignacionesManuales as any) : ([] as any),
     });
     if (errRpc) throw errRpc;
 
@@ -253,6 +467,7 @@ export const pedidosApi = {
       console.warn('Aviso actualizando metadatos de roles en pedidos:', errPed);
     }
 
+    notifyDataChanged();
     return resRpc;
   },
 
@@ -298,6 +513,7 @@ export const pedidosApi = {
         .eq('id', params.pedidoId);
     }
 
+    notifyDataChanged();
     return data;
   },
 
@@ -406,6 +622,7 @@ export const pedidosApi = {
       } as any)
       .eq('id', pedidoConDetalle.id);
 
+    notifyDataChanged();
     return {
       pedidoOriginalActualizado: pedidoConDetalle.id,
       pedidoRemanenteCreado: pedidoHijo,
@@ -424,7 +641,194 @@ export const pedidosApi = {
       p_novedad: params.novedad || undefined
     });
     if (error) throw error;
+    notifyDataChanged();
     return data;
+  },
+
+  // --- RPC: Reasignar Lote / Ubicación de una Tarea de Picking Pendiente ---
+  async reasignarTareaPicking(params: {
+    tareaPickingId: string;
+    nuevoLoteId: string;
+    nuevaUbicacionId: string;
+    nuevaCantidad?: number;
+  }) {
+    const { data, error } = await (supabase as any).rpc('wms_reasignar_tarea_picking', {
+      p_tarea_picking_id: params.tareaPickingId,
+      p_nuevo_lote_id: params.nuevoLoteId,
+      p_nueva_ubicacion_id: params.nuevaUbicacionId,
+      p_nueva_cantidad: params.nuevaCantidad ?? null,
+    });
+    if (error) throw error;
+    notifyDataChanged();
+    return data;
+  },
+
+  // --- RPC: Crear Tarea de Picking Manual (Lote Hardcodeado) ---
+  async crearTareaPickingManual(params: {
+    pedidoId: string;
+    pedidoDetalleId: string;
+    articuloId: string;
+    loteId: string;
+    ubicacionId: string;
+    cantidad: number;
+    palletId?: string;
+  }) {
+    const { data, error } = await (supabase as any).rpc('wms_crear_tarea_picking_manual', {
+      p_pedido_id: params.pedidoId,
+      p_pedido_detalle_id: params.pedidoDetalleId,
+      p_articulo_id: params.articuloId,
+      p_lote_id: params.loteId,
+      p_ubicacion_id: params.ubicacionId,
+      p_cantidad: params.cantidad,
+      p_pallet_id: params.palletId ?? null,
+    });
+    if (error) throw error;
+    notifyDataChanged();
+    return data;
+  },
+
+  // --- RPC: Cancelar Tarea de Picking y Liberar Reserva de Stock ---
+  async cancelarTareaPicking(tareaPickingId: string) {
+    try {
+      const { data, error } = await (supabase as any).rpc('wms_cancelar_tarea_picking', {
+        p_tarea_picking_id: tareaPickingId,
+      });
+      if (!error) {
+        notifyDataChanged();
+        return data;
+      }
+      if (error && !error.message?.includes('schema cache') && !error.message?.includes('Could not find')) {
+        throw error;
+      }
+    } catch (rpcErr: any) {
+      if (!rpcErr.message?.includes('schema cache') && !rpcErr.message?.includes('Could not find')) {
+        throw rpcErr;
+      }
+      console.warn('Fallback local en cancelarTareaPicking:', rpcErr);
+    }
+
+    // Fallback directo en DB si RPC falla por schema cache
+    const { data: tarea } = await supabase
+      .from('tareas_picking')
+      .select('*')
+      .eq('id', tareaPickingId)
+      .single();
+
+    if (tarea) {
+      const cant = Number(tarea.cantidad_a_recolectar || 0);
+      if (cant > 0) {
+        let q = supabase
+          .from('inventario')
+          .select('id, cantidad_disponible, cantidad_reservada')
+          .eq('articulo_id', tarea.articulo_id)
+          .eq('ubicacion_id', tarea.ubicacion_origen_id);
+        if (tarea.lote_id) q = q.eq('lote_id', tarea.lote_id);
+        if (tarea.pallet_origen_id) q = q.eq('pallet_id', tarea.pallet_origen_id);
+        const { data: invRows } = await q.limit(1);
+        if (invRows && invRows.length > 0) {
+          const inv = invRows[0];
+          await supabase
+            .from('inventario')
+            .update({
+              cantidad_reservada: Math.max(0, Number(inv.cantidad_reservada || 0) - cant),
+              cantidad_disponible: Number(inv.cantidad_disponible || 0) + cant,
+              actualizado_en: new Date().toISOString(),
+            })
+            .eq('id', inv.id);
+        }
+      }
+      if (tarea.pedido_detalle_id) {
+        const { data: det } = await supabase
+          .from('pedidos_detalle')
+          .select('id, cantidad_reservada')
+          .eq('id', tarea.pedido_detalle_id)
+          .single();
+        if (det) {
+          await supabase
+            .from('pedidos_detalle')
+            .update({
+              cantidad_reservada: Math.max(0, Number(det.cantidad_reservada || 0) - cant),
+            })
+            .eq('id', det.id);
+        }
+      }
+      await supabase.from('tareas_picking').delete().eq('id', tareaPickingId);
+    }
+
+    notifyDataChanged();
+    return { exito: true, mensaje: 'Tarea cancelada y stock liberado.' };
+  },
+
+  // --- RPC: Deshacer / Borrar Asignación de Picking y Arrancar de 0 ---
+  async deshacerAsignacionPicking(pedidoId: string) {
+    try {
+      const { data, error } = await (supabase as any).rpc('wms_deshacer_asignacion_picking', {
+        p_pedido_id: pedidoId,
+      });
+      if (!error && data?.exito) {
+        notifyDataChanged();
+        return data;
+      }
+      if (error && !error.message?.includes('schema cache') && !error.message?.includes('Could not find')) {
+        throw error;
+      }
+    } catch (rpcErr: any) {
+      if (!rpcErr.message?.includes('schema cache') && !rpcErr.message?.includes('Could not find')) {
+        throw rpcErr;
+      }
+      console.warn('wms_deshacer_asignacion_picking no encontrado en cache, ejecutando rollback via tareas...');
+    }
+
+    // Cancelar cada tarea existente usando wms_cancelar_tarea_picking o fallback
+    const { data: tareas } = await supabase
+      .from('tareas_picking')
+      .select('id, estado')
+      .eq('pedido_id', pedidoId);
+
+    if (tareas && tareas.length > 0) {
+      for (const t of tareas) {
+        try {
+          await this.cancelarTareaPicking(t.id);
+        } catch (e) {
+          console.warn(`Error cancelando tarea ${t.id} en deshacer asignación:`, e);
+        }
+      }
+    }
+
+    // Limpiar cualquier residuo de tareas_picking para este pedido
+    await supabase.from('tareas_picking').delete().eq('pedido_id', pedidoId);
+
+    // Resetear renglones del pedido
+    await supabase
+      .from('pedidos_detalle')
+      .update({
+        cantidad_reservada: 0,
+        cantidad_separada: 0,
+        lote_id: null,
+        ubicacion_id: null,
+      })
+      .eq('pedido_id', pedidoId);
+
+    // Regresar pedido a 'ingresado' y limpiar estrategia
+    const { data: pedActualizado, error: errPed } = await supabase
+      .from('pedidos')
+      .update({
+        estado: 'ingresado',
+        estrategia_alocacion: null,
+        actualizado_en: new Date().toISOString(),
+      })
+      .eq('id', pedidoId)
+      .select()
+      .maybeSingle();
+
+    if (errPed) throw errPed;
+
+    notifyDataChanged();
+    return {
+      exito: true,
+      pedido: pedActualizado,
+      mensaje: 'Asignaciones eliminadas y reservas liberadas. El pedido volvió a estado ingresado.',
+    };
   },
 
   // --- RPC: Consolidar en Pallet de Despacho (Packing Station) ---
@@ -445,6 +849,7 @@ export const pedidosApi = {
       p_orden_salida_id: params.ordenSalidaId || undefined
     });
     if (error) throw error;
+    notifyDataChanged();
     return data;
   },
 
@@ -458,14 +863,30 @@ export const pedidosApi = {
   }) {
     let rpcResult: any = null;
 
-    // 1. Enviar explícitamente p_valor_declarado_total (como número o 0) y p_cae/p_orden_salida_id como null
-    // Esto evita que JSON.stringify omita las claves (comportamiento de undefined) y previene la ambigüedad de Postgres
-    // "Could not choose the best candidate function between..."
+    // 1. Resolver ordenSalidaId si no se pasó explícitamente
+    let resolvedOrdenSalidaId = params.ordenSalidaId || null;
+    if (!resolvedOrdenSalidaId) {
+      try {
+        const { data: osp } = await supabase
+          .from('ordenes_salida_pedidos')
+          .select('orden_salida_id')
+          .eq('pedido_id', params.pedidoId)
+          .order('id', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (osp?.orden_salida_id) {
+          resolvedOrdenSalidaId = osp.orden_salida_id;
+        }
+      } catch (eOs) {
+        console.warn('Aviso resolviendo orden_salida_id en emitirRemitoRx:', eOs);
+      }
+    }
+
     const rpcPayload = {
       p_pedido_id: params.pedidoId,
       p_numero_remito_rx: params.numeroRemitoRx,
       p_cae: params.cae ? params.cae.trim() : null,
-      p_orden_salida_id: params.ordenSalidaId || null,
+      p_orden_salida_id: resolvedOrdenSalidaId,
       p_valor_declarado_total: typeof params.valorDeclaradoTotal === 'number' && !isNaN(params.valorDeclaradoTotal)
         ? params.valorDeclaradoTotal
         : 0,
@@ -491,11 +912,18 @@ export const pedidosApi = {
       }
     }
 
-    // 2. Si el usuario editó el valor declarado total, asegurar que quede persistido en la fila de remitos_transito
+    // 2. Persistir campos directos de remitos_transito (valor declarado y orden_salida_id)
+    const patchRemito: any = {};
     if (params.valorDeclaradoTotal !== undefined && params.valorDeclaradoTotal >= 0) {
+      patchRemito.valor_declarado_total = params.valorDeclaradoTotal;
+    }
+    if (resolvedOrdenSalidaId) {
+      patchRemito.orden_salida_id = resolvedOrdenSalidaId;
+    }
+    if (Object.keys(patchRemito).length > 0) {
       await supabase
         .from('remitos_transito')
-        .update({ valor_declarado_total: params.valorDeclaradoTotal })
+        .update(patchRemito)
         .eq('pedido_id', params.pedidoId);
     }
 
@@ -534,6 +962,44 @@ export const pedidosApi = {
       }
     }
 
+    // 5. Si pertenece a una orden de salida, actualizar estado a 'remitida' si todos los pedidos tienen remito
+    if (resolvedOrdenSalidaId) {
+      try {
+        const { data: pedidosSalida } = await supabase
+          .from('ordenes_salida_pedidos')
+          .select('pedido_id')
+          .eq('orden_salida_id', resolvedOrdenSalidaId);
+
+        const ids = (pedidosSalida || []).map((p: any) => p.pedido_id);
+        if (ids.length > 0) {
+          const { data: remitosSalida } = await supabase
+            .from('remitos_transito')
+            .select('pedido_id')
+            .in('pedido_id', ids);
+
+          const remitidosSet = new Set((remitosSalida || []).map((r: any) => r.pedido_id));
+          const todoRemitido = ids.every((id: string) => remitidosSet.has(id));
+
+          if (todoRemitido) {
+            await supabase
+              .from('ordenes_salida')
+              .update({ estado: 'remitida', actualizado_en: new Date().toISOString() })
+              .eq('id', resolvedOrdenSalidaId)
+              .in('estado', ['planificacion', 'consolidando_pallets']);
+          } else {
+            await supabase
+              .from('ordenes_salida')
+              .update({ estado: 'consolidando_pallets', actualizado_en: new Date().toISOString() })
+              .eq('id', resolvedOrdenSalidaId)
+              .eq('estado', 'planificacion');
+          }
+        }
+      } catch (errSync) {
+        console.warn('Aviso sincronizando estado orden salida en emitirRemitoRx:', errSync);
+      }
+    }
+
+    notifyDataChanged();
     return rpcResult;
   },
 
@@ -563,23 +1029,12 @@ export const pedidosApi = {
     return data;
   },
 
-  // --- RPC: Despacho Físico Definitivo del Pedido (Salida de Almacén) ---
-  async despacharPedido(pedidoId: string, usuarioId?: string) {
-    // 1. Intentar RPC almacenada wms_despachar_pedido
-    try {
-      const { data, error } = await (supabase as any).rpc('wms_despachar_pedido', {
-        p_pedido_id: pedidoId,
-        p_usuario_id: usuarioId || undefined,
-      });
-      if (!error && data && data.exito) {
-        return data;
-      }
-      if (error) console.warn('RPC wms_despachar_pedido aviso:', error.message);
-    } catch (e) {
-      console.warn('Excepción ejecutando wms_despachar_pedido:', e);
-    }
-
-    // 2. Fallback Directo: descontar inventario, registrar kardex y marcar despachado
+  // --- Despacho Físico Definitivo del Pedido (Salida de Almacén) ---
+  // Unifica el asiento de Kardex sobre el MISMO registro existente de Picking:
+  // - Si fue reparto/entrega -> tipo 'entregado'
+  // - Si fue retiro en puerta -> tipo 'despacho'
+  // - Deduce físicamente de 'inventario' el stock reservado/disponible
+  async despacharPedido(pedidoId: string, _usuarioId?: string) {
     const { data: ped, error: errGetPed } = await supabase
       .from('pedidos')
       .select(`
@@ -623,7 +1078,8 @@ export const pedidosApi = {
         const volUnit = Number(detItem?.articulo?.volumen_unitario_m3 || 0);
         const volTotal = Math.round(cant * volUnit * 10000) / 10000;
 
-        // Descontar inventario reservado
+        // Descontar inventario físico (primero de cantidad_reservada, luego de cantidad_disponible)
+        let cantRestante = cant;
         const { data: invRow } = await supabase
           .from('inventario')
           .select('id, cantidad_reservada, cantidad_disponible, volumen_m3')
@@ -633,9 +1089,20 @@ export const pedidosApi = {
           .maybeSingle();
 
         if (invRow) {
-          const nuevaRes = Math.max(0, Number(invRow.cantidad_reservada || 0) - cant);
-          const nuevoDisp = Number(invRow.cantidad_disponible || 0);
-          const nuevoVol = Math.max(0, Math.round((Number(invRow.volumen_m3 || 0) - volTotal) * 10000) / 10000);
+          const cantResActual = Number(invRow.cantidad_reservada || 0);
+          const cantDispActual = Number(invRow.cantidad_disponible || 0);
+
+          const dedRes = Math.min(cantResActual, cantRestante);
+          cantRestante -= dedRes;
+
+          const dedDisp = Math.min(cantDispActual, cantRestante);
+          cantRestante -= dedDisp;
+
+          const nuevaRes = Math.max(0, cantResActual - dedRes);
+          const nuevoDisp = Math.max(0, cantDispActual - dedDisp);
+          const dedVol = Math.round((dedRes + dedDisp) * volUnit * 10000) / 10000;
+          const nuevoVol = Math.max(0, Math.round((Number(invRow.volumen_m3 || 0) - dedVol) * 10000) / 10000);
+
           if (nuevaRes <= 0.001 && nuevoDisp <= 0.001) {
             await supabase.from('inventario').delete().eq('id', invRow.id);
           } else {
@@ -643,6 +1110,7 @@ export const pedidosApi = {
               .from('inventario')
               .update({
                 cantidad_reservada: nuevaRes,
+                cantidad_disponible: nuevoDisp,
                 volumen_m3: nuevoVol,
                 actualizado_en: new Date().toISOString(),
               })
@@ -650,24 +1118,94 @@ export const pedidosApi = {
           }
         }
 
-        // Registrar movimiento de salida en kardex
+        // Si aún queda remanente, descontar de cualquier otro registro con stock del artículo
+        if (cantRestante > 0) {
+          const { data: fallbackRows } = await supabase
+            .from('inventario')
+            .select('id, cantidad_reservada, cantidad_disponible, volumen_m3')
+            .eq('cliente_id', ped.cliente_id)
+            .eq('articulo_id', t.articulo_id)
+            .order('cantidad_reservada', { ascending: false });
+
+          if (fallbackRows) {
+            for (const fRow of fallbackRows) {
+              if (cantRestante <= 0) break;
+              const fRes = Number(fRow.cantidad_reservada || 0);
+              const fDisp = Number(fRow.cantidad_disponible || 0);
+              if (fRes <= 0 && fDisp <= 0) continue;
+
+              const dedR = Math.min(fRes, cantRestante);
+              cantRestante -= dedR;
+              const dedD = Math.min(fDisp, cantRestante);
+              cantRestante -= dedD;
+
+              const nRes = Math.max(0, fRes - dedR);
+              const nDisp = Math.max(0, fDisp - dedD);
+              const nVol = Math.max(0, Math.round((Number(fRow.volumen_m3 || 0) - (dedR + dedD) * volUnit) * 10000) / 10000);
+
+              if (nRes <= 0.001 && nDisp <= 0.001) {
+                await supabase.from('inventario').delete().eq('id', fRow.id);
+              } else {
+                await supabase
+                  .from('inventario')
+                  .update({
+                    cantidad_reservada: nRes,
+                    cantidad_disponible: nDisp,
+                    volumen_m3: nVol,
+                    actualizado_en: new Date().toISOString(),
+                  })
+                  .eq('id', fRow.id);
+              }
+            }
+          }
+        }
+
         try {
-          await (supabase.from('movimientos_inventario') as any).insert({
-            cliente_id: ped.cliente_id,
-            lote_id: t.lote_id || null,
-            articulo_id: t.articulo_id,
-            pallet_id: t.pallet_origen_id || null,
-            ubicacion_origen_id: t.ubicacion_origen_id || null,
-            ubicacion_destino_id: null,
-            tipo_movimiento: 'despacho',
-            cantidad: cant,
-            volumen_m3: volTotal,
-            documento_referencia: `DESPACHO-${ped.numero_pedido}`,
-            notas: `Salida de almacén por despacho de pedido ${ped.numero_pedido}`,
-          });
-        } catch {
-          // Fallback a tipo picking si 'despacho' enum no estuviera aún
-          try {
+          const esRetiroPuerta = ped.modalidad_entrega === 'retiro_deposito' || (ped.modalidad_entrega as string) === 'retiro';
+          const tipoFinal = esRetiroPuerta ? 'despacho' : 'entregado';
+          const estadoFinal = esRetiroPuerta ? 'despachado' : 'entregado';
+          const docFinal = (esRetiroPuerta ? 'DESPACHO-' : 'ENTREGA-') + ped.numero_pedido;
+
+          let movExistenteId: string | null = null;
+          // 1. Buscar por pedido_id y articulo_id
+          const { data: m1 } = await (supabase.from('movimientos_inventario') as any)
+            .select('id')
+            .eq('pedido_id', ped.id)
+            .eq('articulo_id', t.articulo_id)
+            .order('fecha_hora', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (m1?.id) {
+            movExistenteId = m1.id;
+          } else {
+            // 2. Fallback: buscar por documento_referencia conteniendo el numero_pedido
+            const { data: m2 } = await (supabase.from('movimientos_inventario') as any)
+              .select('id')
+              .ilike('documento_referencia', `%${ped.numero_pedido}%`)
+              .eq('articulo_id', t.articulo_id)
+              .order('fecha_hora', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (m2?.id) movExistenteId = m2.id;
+          }
+
+          if (movExistenteId) {
+            await (supabase.from('movimientos_inventario') as any)
+              .update({
+                tipo_movimiento: tipoFinal,
+                estado: estadoFinal,
+                documento_referencia: docFinal,
+                cantidad: cant,
+                volumen_m3: volTotal,
+                pedido_id: ped.id,
+                notas: esRetiroPuerta
+                  ? `Salida de almacén - Retirado en puerta (Despachado) pedido ${ped.numero_pedido}`
+                  : `Salida de almacén - Reparto / Entrega (Entregado) pedido ${ped.numero_pedido}`,
+                fecha_hora: new Date().toISOString(),
+              })
+              .eq('id', movExistenteId);
+          } else {
             await (supabase.from('movimientos_inventario') as any).insert({
               cliente_id: ped.cliente_id,
               lote_id: t.lote_id || null,
@@ -675,65 +1213,132 @@ export const pedidosApi = {
               pallet_id: t.pallet_origen_id || null,
               ubicacion_origen_id: t.ubicacion_origen_id || null,
               ubicacion_destino_id: null,
-              tipo_movimiento: 'picking',
+              tipo_movimiento: tipoFinal,
+              estado: estadoFinal,
+              pedido_id: ped.id,
               cantidad: cant,
               volumen_m3: volTotal,
-              documento_referencia: `DESPACHO-${ped.numero_pedido}`,
-              notas: `Salida de almacén por despacho de pedido ${ped.numero_pedido}`,
+              documento_referencia: docFinal,
+              notas: esRetiroPuerta
+                ? `Salida de almacén - Retirado en puerta (Despachado) pedido ${ped.numero_pedido}`
+                : `Salida de almacén - Reparto / Entrega (Entregado) pedido ${ped.numero_pedido}`,
             });
-          } catch (errMov) {
-            console.warn('No se pudo registrar asiento kardex en fallback:', errMov);
           }
+        } catch (errMov) {
+          console.warn('Aviso actualizando Kardex en fallback:', errMov);
         }
 
         totalDespachado += cant;
       }
     } else {
       // Si no hubo tareas de picking registradas, descontar directamente por pedidos_detalle
+      const esRetiroPuerta = ped.modalidad_entrega === 'retiro_deposito';
+      const tipoFinal = esRetiroPuerta ? 'despacho' : 'entregado';
+      const estadoFinal = esRetiroPuerta ? 'despachado' : 'entregado';
+      const docFinal = (esRetiroPuerta ? 'DESPACHO-' : 'ENTREGA-') + ped.numero_pedido;
+
       for (const d of ped.detalles || []) {
         const cant = Number(d.cantidad_separada || d.cantidad_reservada || d.cantidad_solicitada || 0);
         if (cant <= 0) continue;
 
         const volUnit = Number(d.articulo?.volumen_unitario_m3 || 0);
         const volTotal = Math.round(cant * volUnit * 10000) / 10000;
+        let cantRestante = cant;
 
         const { data: invRows } = await supabase
           .from('inventario')
           .select('id, cantidad_reservada, cantidad_disponible, volumen_m3')
           .eq('cliente_id', ped.cliente_id)
           .eq('articulo_id', d.articulo_id)
-          .order('cantidad_reservada', { ascending: false })
-          .limit(1);
+          .order('cantidad_reservada', { ascending: false });
 
-        if (invRows && invRows[0]) {
-          const invRow = invRows[0];
-          const nuevaRes = Math.max(0, Number(invRow.cantidad_reservada || 0) - cant);
-          const nuevoDisp = Number(invRow.cantidad_disponible || 0);
-          const nuevoVol = Math.max(0, Math.round((Number(invRow.volumen_m3 || 0) - volTotal) * 10000) / 10000);
-          if (nuevaRes <= 0.001 && nuevoDisp <= 0.001) {
-            await supabase.from('inventario').delete().eq('id', invRow.id);
-          } else {
-            await supabase
-              .from('inventario')
-              .update({
-                cantidad_reservada: nuevaRes,
-                volumen_m3: nuevoVol,
-                actualizado_en: new Date().toISOString(),
-              })
-              .eq('id', invRow.id);
+        if (invRows && invRows.length > 0) {
+          for (const invRow of invRows) {
+            if (cantRestante <= 0) break;
+            const cantResActual = Number(invRow.cantidad_reservada || 0);
+            const cantDispActual = Number(invRow.cantidad_disponible || 0);
+            if (cantResActual <= 0 && cantDispActual <= 0) continue;
+
+            const dedRes = Math.min(cantResActual, cantRestante);
+            cantRestante -= dedRes;
+
+            const dedDisp = Math.min(cantDispActual, cantRestante);
+            cantRestante -= dedDisp;
+
+            const nuevaRes = Math.max(0, cantResActual - dedRes);
+            const nuevoDisp = Math.max(0, cantDispActual - dedDisp);
+            const dedVol = Math.round((dedRes + dedDisp) * volUnit * 10000) / 10000;
+            const nuevoVol = Math.max(0, Math.round((Number(invRow.volumen_m3 || 0) - dedVol) * 10000) / 10000);
+
+            if (nuevaRes <= 0.001 && nuevoDisp <= 0.001) {
+              await supabase.from('inventario').delete().eq('id', invRow.id);
+            } else {
+              await supabase
+                .from('inventario')
+                .update({
+                  cantidad_reservada: nuevaRes,
+                  cantidad_disponible: nuevoDisp,
+                  volumen_m3: nuevoVol,
+                  actualizado_en: new Date().toISOString(),
+                })
+                .eq('id', invRow.id);
+            }
           }
 
-          // Asiento Kardex en fallback directo
+          // Actualizar en el mismo registro o insertar si no existía
           try {
-            await (supabase.from('movimientos_inventario') as any).insert({
-              cliente_id: ped.cliente_id,
-              articulo_id: d.articulo_id,
-              tipo_movimiento: 'despacho',
-              cantidad: cant,
-              volumen_m3: volTotal,
-              documento_referencia: `DESPACHO-${ped.numero_pedido}`,
-              notas: `Salida de almacén por despacho directo de pedido ${ped.numero_pedido}`,
-            });
+            let movExistenteId: string | null = null;
+            const { data: m1 } = await (supabase.from('movimientos_inventario') as any)
+              .select('id')
+              .eq('pedido_id', ped.id)
+              .eq('articulo_id', d.articulo_id)
+              .order('fecha_hora', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+
+            if (m1?.id) {
+              movExistenteId = m1.id;
+            } else {
+              const { data: m2 } = await (supabase.from('movimientos_inventario') as any)
+                .select('id')
+                .ilike('documento_referencia', `%${ped.numero_pedido}%`)
+                .eq('articulo_id', d.articulo_id)
+                .order('fecha_hora', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (m2?.id) movExistenteId = m2.id;
+            }
+
+            if (movExistenteId) {
+              await (supabase.from('movimientos_inventario') as any)
+                .update({
+                  tipo_movimiento: tipoFinal,
+                  estado: estadoFinal,
+                  documento_referencia: docFinal,
+                  cantidad: cant,
+                  volumen_m3: volTotal,
+                  pedido_id: ped.id,
+                  notas: esRetiroPuerta
+                    ? `Salida directa - Retirado en puerta (Despachado) pedido ${ped.numero_pedido}`
+                    : `Salida directa - Reparto / Entrega (Entregado) pedido ${ped.numero_pedido}`,
+                  fecha_hora: new Date().toISOString(),
+                })
+                .eq('id', movExistenteId);
+            } else {
+              await (supabase.from('movimientos_inventario') as any).insert({
+                cliente_id: ped.cliente_id,
+                articulo_id: d.articulo_id,
+                tipo_movimiento: tipoFinal,
+                estado: estadoFinal,
+                pedido_id: ped.id,
+                cantidad: cant,
+                volumen_m3: volTotal,
+                documento_referencia: docFinal,
+                notas: esRetiroPuerta
+                  ? `Salida directa - Retirado en puerta (Despachado) pedido ${ped.numero_pedido}`
+                  : `Salida directa - Reparto / Entrega (Entregado) pedido ${ped.numero_pedido}`,
+              });
+            }
           } catch {
             // Silencioso si falla
           }
@@ -753,15 +1358,17 @@ export const pedidosApi = {
 
     if (errPed) throw errPed;
 
-    // Actualizar remito de tránsito con enum válido ('en_transito')
+    // Actualizar remito de tránsito con estado 'entregado_conforme'
     try {
       await (supabase
         .from('remitos_transito') as any)
-        .update({ estado: 'en_transito', actualizado_en: new Date().toISOString() })
+        .update({ estado: 'entregado_conforme', actualizado_en: new Date().toISOString() })
         .eq('pedido_id', pedidoId);
     } catch (errRem) {
       console.warn('Aviso: no se pudo actualizar remito:', errRem);
     }
+
+    notifyDataChanged();
 
     return {
       exito: true,
@@ -777,7 +1384,10 @@ export const pedidosApi = {
       const { data, error } = await (supabase as any).rpc('wms_despachar_orden_salida', {
         p_orden_salida_id: ordenSalidaId,
       });
-      if (!error && data) return data;
+      if (!error && data) {
+        notifyDataChanged();
+        return data;
+      }
     } catch (e) {
       console.warn('Excepción ejecutando wms_despachar_orden_salida:', e);
     }
@@ -796,8 +1406,10 @@ export const pedidosApi = {
 
     await (supabase
       .from('ordenes_salida') as any)
-      .update({ estado: 'despachada' })
+      .update({ estado: 'cerrada', actualizado_en: new Date().toISOString() })
       .eq('id', ordenSalidaId);
+
+    notifyDataChanged();
 
     return { exito: true, ordenSalidaId };
   },
@@ -808,6 +1420,7 @@ export const pedidosApi = {
       p_pedido_id: pedidoId
     });
     if (error) throw error;
+    notifyDataChanged();
     return data;
   },
 
@@ -861,6 +1474,7 @@ export const pedidosApi = {
       }
     }
 
+    notifyDataChanged();
     return resultados;
   },
 

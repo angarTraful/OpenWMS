@@ -281,7 +281,8 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
       await despachosApi.registrarEntregaParada({
         paradaId: paradaParaEntrega.id,
         rutaId: selectedRutaId,
-        pedidoId: paradaParaEntrega.pedido_id,
+        pedidoId: paradaParaEntrega.pedido_id || (paradaParaEntrega.pedido as any)?.id || (paradaParaEntrega.remito as any)?.pedido_id,
+        remitoId: paradaParaEntrega.remito_id || (paradaParaEntrega.remito as any)?.id,
         estadoEntrega: 'entregado',
         receptorNombre: receptorNombre.trim() || undefined,
         receptorDocumento: receptorDni.trim() || undefined,
@@ -350,7 +351,8 @@ export const ChoferRutaTabletView: React.FC<ChoferRutaTabletViewProps> = ({
       await despachosApi.registrarEntregaParada({
         paradaId: paradaParaNovedad.id,
         rutaId: selectedRutaId,
-        pedidoId: paradaParaNovedad.pedido_id,
+        pedidoId: paradaParaNovedad.pedido_id || (paradaParaNovedad.pedido as any)?.id || (paradaParaNovedad.remito as any)?.pedido_id,
+        remitoId: paradaParaNovedad.remito_id || (paradaParaNovedad.remito as any)?.id,
         estadoEntrega: 'con_novedad',
         motivoNovedad: motivoTexto,
         fotoRemitoUrl: finalFotoUrl,

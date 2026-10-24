@@ -32,7 +32,7 @@ import { RfTerminalView } from './components/rf/RfTerminalView';
 import { ChoferRutaTabletView } from './components/outbound/ChoferRutaTabletView';
 import { ImportarMovimientosModal } from './components/inventory/ImportarMovimientosModal';
 import { ProgramacionGridView } from './components/programacion/ProgramacionGridView';
-
+import { OperacionesModule } from './components/operaciones/OperacionesModule';
 
 import {
   clientesApi,
@@ -43,6 +43,8 @@ import {
   despachosApi,
 } from './api';
 import { formatM3, formatNumber } from './lib/utils';
+import { supabase } from './api/supabaseClient';
+import { notifyDataChanged } from './lib/dataSync';
 
 export function App() {
   // Theme state
@@ -51,7 +53,7 @@ export function App() {
       const saved = localStorage.getItem('openwms-theme');
       if (saved === 'light') return false;
       if (saved === 'dark') return true;
-    } catch {}
+    } catch { }
     return document.documentElement.classList.contains('dark');
   });
 
@@ -108,7 +110,7 @@ export function App() {
       if (pathname.endsWith('/chofer') || pathname.endsWith('/driver')) return 'chofer';
       if (pathname.endsWith('/rf') || pathname.endsWith('/terminal')) return 'rf';
       if (pathname.endsWith('/programacion') || pathname.endsWith('/cliente') || pathname.endsWith('/portal')) return 'programacion';
-    } catch {}
+    } catch { }
     return null;
   }, []);
 
@@ -130,7 +132,7 @@ export function App() {
       if (urlRutaId) {
         setChoferSelectedRutaId(urlRutaId);
       }
-    } catch {}
+    } catch { }
   }, []);
 
   // Operational Data
@@ -149,14 +151,12 @@ export function App() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Load master data: almacenes & clientes
+  // Load master data: almacenes & clientes (el depósito por defecto queda en Todos)
   useEffect(() => {
     Promise.all([almacenApi.listarAlmacenes(), clientesApi.listarClientes(false)])
       .then(([almList, cliList]) => {
         setAlmacenes(almList || []);
-        if (almList && almList.length > 0) {
-          setSelectedAlmacenId(almList[0].id);
-        }
+        // El selector de almacén se mantiene en '' ("Todos los Depositos"), idéntico al de clientes
         setClientes(cliList || []);
       })
       .catch((err) => {
@@ -194,8 +194,76 @@ export function App() {
     }
   }, [selectedClienteId, selectedAlmacenId]);
 
+  // Refrescar automáticamente al cambiar de pestaña o filtros
   useEffect(() => {
     fetchData();
+  }, [currentTab, fetchData]);
+
+  // Sincronización en Tiempo Real: Supabase Realtime + Eventos Locales + Foco de Ventana + Polling
+  useEffect(() => {
+    let debounceTimer: any = null;
+    const triggerRefresh = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        fetchData();
+      }, 300);
+    };
+
+    // 1. Canal Supabase Realtime sobre todas las tablas de movimientos y operaciones
+    const channel = supabase
+      .channel('openwms-global-realtime-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventario' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'movimientos_inventario' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos_detalle' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tareas_picking' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_recepcion' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_recepcion_detalle' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tareas_putaway_control' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_salida' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ordenes_salida_pedidos' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rutas_entrega' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rutas_paradas_itinerario' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'remitos_transito' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pallets_lpn' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'articulos' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clientes' }, triggerRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'operaciones' }, triggerRefresh)
+      .subscribe();
+
+    // 2. Escucha de evento local 'wms:data-changed' para refresco inmediato reactivo
+    const handleLocalDataChange = () => {
+      triggerRefresh();
+    };
+    window.addEventListener('wms:data-changed', handleLocalDataChange);
+
+    // 3. Refrescar al retomar foco o visibilidad de pestaña en el navegador
+    const handleFocus = () => {
+      triggerRefresh();
+    };
+    window.addEventListener('focus', handleFocus);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        triggerRefresh();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    // 4. Polling suave de seguridad cada 8s para sincronización continua asegurada
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible' && !document.hidden) {
+        fetchData();
+      }
+    }, 80000);
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+      window.removeEventListener('wms:data-changed', handleLocalDataChange);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [fetchData]);
 
   // Cubic Volume aggregation by client for 3PL billing
@@ -364,285 +432,293 @@ export function App() {
             </div>
           )}
 
-        {/* Dynamic Tab Views with AnimatePresence & PageTransition */}
-        <AnimatePresence>
-          <PageTransition key={currentTab}>
-            {currentTab === 'overview' && (
-              <div className="space-y-6">
-                {/* Tablero Operativo KPIs */}
-                <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                  <KpiCard
-                    title="Total Mercadería"
-                    value={formatNumber(totalMercaderia, 0)}
-                    subtitle={`${formatNumber(totalBultosDisponibles, 0)} disponibles`}
-                    icon={Package}
-                    delay={0}
-                    highlight={true}
-                    trend={{
-                      value: `${inventario.length} líneas`,
-                      isPositive: true,
-                      label: 'Stock en Almacén',
-                    }}
+          {/* Dynamic Tab Views with AnimatePresence & PageTransition */}
+          <AnimatePresence>
+            <PageTransition key={currentTab}>
+              {currentTab === 'overview' && (
+                <div className="space-y-6">
+                  {/* Tablero Operativo KPIs */}
+                  <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                    <KpiCard
+                      title="Total Mercadería"
+                      value={formatNumber(totalMercaderia, 0)}
+                      subtitle={`${formatNumber(totalBultosDisponibles, 0)} disponibles`}
+                      icon={Package}
+                      delay={0}
+                      highlight={true}
+                      trend={{
+                        value: `${inventario.length} líneas`,
+                        isPositive: true,
+                        label: 'Stock en Almacén',
+                      }}
+                    />
+
+                    <KpiCard
+                      title="Volumen 3PL Ocupado"
+                      value={formatM3(totalM3Ocupados)}
+                      subtitle="Espacio físico ocupado en almacén"
+                      icon={Box}
+                      delay={0.05}
+                      trend={{
+                        value: `${((totalM3Ocupados / 5000) * 100).toFixed(1)}%`,
+                        isPositive: totalM3Ocupados < 4500,
+                        label: 'Capacidad Almacén',
+                      }}
+                    />
+
+                    <KpiCard
+                      title="Pallets LPN Activos"
+                      value={formatNumber(totalPalletsLpn, 0)}
+                      subtitle="Posiciones paletizadas en racks"
+                      icon={Layers}
+                      delay={0.1}
+                      trend={{
+                        value: '+4 hoy',
+                        isPositive: true,
+                        label: 'Flujo de Guardado',
+                      }}
+                    />
+
+                    <KpiCard
+                      title="Inbound en Curso"
+                      value={formatNumber(recepcionesActivas, 0)}
+                      subtitle="Contenedores y OC en playa/descarga"
+                      icon={ArrowDownToLine}
+                      delay={0.15}
+                      trend={{
+                        value: `${recepciones.length} totales`,
+                        isNeutral: true,
+                        label: 'Órdenes Arribadas',
+                      }}
+                    />
+
+                    <KpiCard
+                      title="Pedidos & Picking"
+                      value={formatNumber(pedidosPendientes, 0)}
+                      subtitle="Órdenes de clientes para recolección"
+                      icon={ArrowUpFromLine}
+                      delay={0.2}
+                      trend={{
+                        value: `${flowData.pedidosSeparados} listos`,
+                        isPositive: true,
+                        label: 'Listos para Despacho',
+                      }}
+                    />
+                  </section>
+
+                  {/* Storage Volume per Client Chart (1 per row analytical standard) */}
+                  <StorageVolumeChart
+                    data={volumeByClient}
+                    capacidadTotalM3={5000}
+                    isDark={isDark}
                   />
 
-                  <KpiCard
-                    title="Volumen 3PL Ocupado"
-                    value={formatM3(totalM3Ocupados)}
-                    subtitle="Espacio físico ocupado en almacén"
-                    icon={Box}
-                    delay={0.05}
-                    trend={{
-                      value: `${((totalM3Ocupados / 5000) * 100).toFixed(1)}%`,
-                      isPositive: totalM3Ocupados < 4500,
-                      label: 'Capacidad Almacén',
-                    }}
-                  />
+                  {/* Operational Flow Funnel Chart */}
+                  <FlowTrendsChart data={flowData} isDark={isDark} />
 
-                  <KpiCard
-                    title="Pallets LPN Activos"
-                    value={formatNumber(totalPalletsLpn, 0)}
-                    subtitle="Posiciones paletizadas en racks"
-                    icon={Layers}
-                    delay={0.1}
-                    trend={{
-                      value: '+4 hoy',
-                      isPositive: true,
-                      label: 'Flujo de Guardado',
-                    }}
-                  />
+                  {/* Quick Preview of Active Stock */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-[#cdc3d4] flex items-center gap-2">
+                        <Layers className="w-3.5 h-3.5 text-[#dab9ff]" />
+                        Existencias Destacadas en Depósito
+                      </h3>
+                      <button
+                        onClick={() => setCurrentTab('inventory')}
+                        className="text-xs font-medium text-[#dab9ff] hover:text-[#eedbff] transition-colors"
+                      >
+                        Abrir Módulo Completo de Inventario &rarr;
+                      </button>
+                    </div>
 
-                  <KpiCard
-                    title="Inbound en Curso"
-                    value={formatNumber(recepcionesActivas, 0)}
-                    subtitle="Contenedores y OC en playa/descarga"
-                    icon={ArrowDownToLine}
-                    delay={0.15}
-                    trend={{
-                      value: `${recepciones.length} totales`,
-                      isNeutral: true,
-                      label: 'Órdenes Arribadas',
-                    }}
-                  />
-
-                  <KpiCard
-                    title="Pedidos & Picking"
-                    value={formatNumber(pedidosPendientes, 0)}
-                    subtitle="Órdenes de clientes para recolección"
-                    icon={ArrowUpFromLine}
-                    delay={0.2}
-                    trend={{
-                      value: `${flowData.pedidosSeparados} listos`,
-                      isPositive: true,
-                      label: 'Listos para Despacho',
-                    }}
-                  />
-                </section>
-
-                {/* Storage Volume per Client Chart (1 per row analytical standard) */}
-                <StorageVolumeChart
-                  data={volumeByClient}
-                  capacidadTotalM3={5000}
-                  isDark={isDark}
-                />
-
-                {/* Operational Flow Funnel Chart */}
-                <FlowTrendsChart data={flowData} isDark={isDark} />
-
-                {/* Quick Preview of Active Stock */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-[#cdc3d4] flex items-center gap-2">
-                      <Layers className="w-3.5 h-3.5 text-[#dab9ff]" />
-                      Existencias Destacadas en Depósito
-                    </h3>
-                    <button
-                      onClick={() => setCurrentTab('inventory')}
-                      className="text-xs font-medium text-[#dab9ff] hover:text-[#eedbff] transition-colors"
-                    >
-                      Abrir Módulo Completo de Inventario &rarr;
-                    </button>
+                    <InventoryTable
+                      items={inventario.slice(0, 10)}
+                      selectedItem={selectedInventoryItem}
+                      onSelectItem={(item) => {
+                        setSelectedInventoryItem(item);
+                        setCurrentTab('inventory');
+                      }}
+                      isLoading={isLoading}
+                    />
                   </div>
-
-                  <InventoryTable
-                    items={inventario.slice(0, 10)}
-                    selectedItem={selectedInventoryItem}
-                    onSelectItem={(item) => {
-                      setSelectedInventoryItem(item);
-                      setCurrentTab('inventory');
-                    }}
-                    isLoading={isLoading}
-                  />
                 </div>
-              </div>
-            )}
+              )}
 
-            {currentTab === 'inventory' && (
-              <div className="w-full space-y-4">
-                <InventoryTable
-                  items={inventario}
-                  selectedItem={selectedInventoryItem}
-                  onSelectItem={(item) =>
-                    setSelectedInventoryItem(
-                      selectedInventoryItem?.id === item.id ? null : item
-                    )
-                  }
-                  onViewKardex={(cliId, artId) => {
-                    if (cliId) setSelectedClienteId(cliId);
-                    setKardexFiltroArticuloId(artId || null);
-                    setCurrentTab('kardex');
-                  }}
-                  onOpenImportarMovimientos={() => setIsImportMovimientosOpen(true)}
-                  isLoading={isLoading}
-                />
-
-                {selectedInventoryItem && (
-                  <PalletDetailPanel
-                    item={selectedInventoryItem}
-                    onClose={() => setSelectedInventoryItem(null)}
+              {currentTab === 'inventory' && (
+                <div className="w-full space-y-4">
+                  <InventoryTable
+                    items={inventario}
+                    selectedItem={selectedInventoryItem}
+                    onSelectItem={(item) =>
+                      setSelectedInventoryItem(
+                        selectedInventoryItem?.id === item.id ? null : item
+                      )
+                    }
                     onViewKardex={(cliId, artId) => {
                       if (cliId) setSelectedClienteId(cliId);
                       setKardexFiltroArticuloId(artId || null);
                       setCurrentTab('kardex');
                     }}
+                    onOpenImportarMovimientos={() => setIsImportMovimientosOpen(true)}
+                    isLoading={isLoading}
                   />
-                )}
+
+                  {selectedInventoryItem && (
+                    <PalletDetailPanel
+                      item={selectedInventoryItem}
+                      onClose={() => setSelectedInventoryItem(null)}
+                      onViewKardex={(cliId, artId) => {
+                        if (cliId) setSelectedClienteId(cliId);
+                        setKardexFiltroArticuloId(artId || null);
+                        setCurrentTab('kardex');
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+
+              {currentTab === 'inbound' && (
+                <InboundMonitor
+                  recepciones={recepciones}
+                  onRefresh={fetchData}
+                  isDark={isDark}
+                  almacenes={almacenes}
+                  clientes={clientes}
+                  selectedAlmacenId={selectedAlmacenId}
+                  selectedClienteId={selectedClienteId}
+                />
+              )}
+
+              {(currentTab === 'outbound' || currentTab === 'pedidos' || currentTab === 'salidas' || currentTab === 'rutas') && (
+                <OutboundMonitor
+                  pedidos={pedidos}
+                  ordenesSalida={ordenesSalida}
+                  onRefresh={fetchData}
+                  isDark={isDark}
+                  clientes={clientes}
+                  almacenes={almacenes}
+                  selectedClienteId={selectedClienteId}
+                  selectedAlmacenId={selectedAlmacenId}
+                  initialSubTab={
+                    currentTab === 'salidas'
+                      ? 'salidas'
+                      : currentTab === 'rutas'
+                        ? 'rutas'
+                        : 'pedidos'
+                  }
+                  onSubTabChange={(subTab) => {
+                    setCurrentTab(subTab as any);
+                  }}
+                  onOpenTabletChofer={(rutaId) => {
+                    setChoferSelectedRutaId(rutaId || null);
+                    setCurrentTab('chofer');
+                  }}
+                />
+              )}
+
+              {currentTab === 'programacion' && (
+                <ProgramacionGridView
+                  clientes={clientes}
+                  almacenes={almacenes}
+                  selectedClienteId={selectedClienteId}
+                  isStandalonePortal={false}
+                />
+              )}
+
+              {currentTab === 'kardex' && (
+                <KardexView
+                  movimientos={kardex}
+                  inventario={inventario}
+                  pedidos={pedidos}
+                  clientes={clientes}
+                  almacenes={almacenes}
+                  onRefresh={fetchData}
+                  isLoading={isLoading}
+                  filtroArticuloId={kardexFiltroArticuloId}
+                  onClearArticuloFilter={() => setKardexFiltroArticuloId(null)}
+                />
+              )}
+
+              {currentTab === 'operaciones' && (
+                <OperacionesModule
+                  clientes={clientes}
+                  selectedClienteId={selectedClienteId}
+                  isDark={isDark}
+                />
+              )}
+
+              {currentTab === 'analytics' && (
+                <AnalyticsDashboard
+                  inventario={inventario}
+                  kardex={kardex}
+                  almacenes={almacenes}
+                  clientes={clientes}
+                  selectedAlmacenId={selectedAlmacenId}
+                  selectedClienteId={selectedClienteId}
+                  onRefresh={fetchData}
+                  isDark={isDark}
+                />
+              )}
+
+              {currentTab === 'billing' && (
+                <BillingSettlementView
+                  clientes={clientes}
+                  selectedClienteId={selectedClienteId}
+                  onSelectCliente={setSelectedClienteId}
+                />
+              )}
+
+              {currentTab === 'masters' && (
+                <MastersManagementView
+                  clientes={clientes}
+                  almacenes={almacenes}
+                  selectedClienteId={selectedClienteId}
+                  selectedAlmacenId={selectedAlmacenId}
+                  onRefresh={fetchData}
+                />
+              )}
+
+              {currentTab === 'rf' && (
+                <RfTerminalView
+                  almacenes={almacenes}
+                  selectedAlmacenId={selectedAlmacenId}
+                  onExitTerminal={() => setCurrentTab('overview')}
+                />
+              )}
+
+              {currentTab === 'chofer' && (
+                <ChoferRutaTabletView
+                  initialRutaId={choferSelectedRutaId || undefined}
+                  onBack={() => setCurrentTab('rutas')}
+                  almacenes={almacenes}
+                />
+              )}
+            </PageTransition>
+          </AnimatePresence>
+        </main>
+
+        {/* Footer (Oculto en Terminal RF y Tablet Chofer para maximizar pantalla del dispositivo) */}
+        {currentTab !== 'rf' && currentTab !== 'chofer' && (
+          <footer className="border-t border-[#333333] bg-[#131313] py-4 mt-auto">
+            <div className="max-w-[1680px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-[#cdc3d4] gap-2">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-[#e5e2e1]">OpenWMS 3PL</span>
+                <span>&bull;</span>
+                <span>PostgreSQL 17 ACID Transaccional</span>
+                <span>&bull;</span>
+                <span className="font-mono text-[11px] text-[#dab9ff]">
+                  Cálculo M3 para Facturación de Espacio
+                </span>
               </div>
-            )}
-
-            {currentTab === 'inbound' && (
-              <InboundMonitor
-                recepciones={recepciones}
-                onRefresh={fetchData}
-                isDark={isDark}
-                almacenes={almacenes}
-                clientes={clientes}
-                selectedAlmacenId={selectedAlmacenId}
-                selectedClienteId={selectedClienteId}
-              />
-            )}
-
-            {(currentTab === 'outbound' || currentTab === 'pedidos' || currentTab === 'salidas' || currentTab === 'rutas') && (
-              <OutboundMonitor
-                pedidos={pedidos}
-                ordenesSalida={ordenesSalida}
-                onRefresh={fetchData}
-                isDark={isDark}
-                clientes={clientes}
-                almacenes={almacenes}
-                selectedClienteId={selectedClienteId}
-                selectedAlmacenId={selectedAlmacenId}
-                initialSubTab={
-                  currentTab === 'salidas'
-                    ? 'salidas'
-                    : currentTab === 'rutas'
-                    ? 'rutas'
-                    : 'pedidos'
-                }
-                onSubTabChange={(subTab) => {
-                  setCurrentTab(subTab as any);
-                }}
-                onOpenTabletChofer={(rutaId) => {
-                  setChoferSelectedRutaId(rutaId || null);
-                  setCurrentTab('chofer');
-                }}
-              />
-            )}
-
-            {currentTab === 'programacion' && (
-              <ProgramacionGridView
-                clientes={clientes}
-                almacenes={almacenes}
-                selectedClienteId={selectedClienteId}
-                isStandalonePortal={false}
-              />
-            )}
-
-            {currentTab === 'kardex' && (
-              <KardexView
-                movimientos={kardex}
-                inventario={inventario}
-                pedidos={pedidos}
-                clientes={clientes}
-                almacenes={almacenes}
-                onRefresh={fetchData}
-                isLoading={isLoading}
-                filtroArticuloId={kardexFiltroArticuloId}
-                onClearArticuloFilter={() => setKardexFiltroArticuloId(null)}
-              />
-            )}
-
-            {currentTab === 'analytics' && (
-              <AnalyticsDashboard
-                inventario={inventario}
-                kardex={kardex}
-                almacenes={almacenes}
-                clientes={clientes}
-                selectedAlmacenId={selectedAlmacenId}
-                selectedClienteId={selectedClienteId}
-                onRefresh={fetchData}
-                isDark={isDark}
-              />
-            )}
-
-            {currentTab === 'billing' && (
-              <BillingSettlementView
-                clientes={clientes}
-                selectedClienteId={selectedClienteId}
-                onSelectCliente={setSelectedClienteId}
-              />
-            )}
-
-            {currentTab === 'masters' && (
-              <MastersManagementView
-                clientes={clientes}
-                almacenes={almacenes}
-                selectedClienteId={selectedClienteId}
-                selectedAlmacenId={selectedAlmacenId}
-                onRefresh={fetchData}
-              />
-            )}
-
-            {currentTab === 'rf' && (
-              <RfTerminalView
-                almacenes={almacenes}
-                selectedAlmacenId={selectedAlmacenId}
-                onExitTerminal={() => setCurrentTab('overview')}
-              />
-            )}
-
-            {currentTab === 'chofer' && (
-              <ChoferRutaTabletView
-                initialRutaId={choferSelectedRutaId || undefined}
-                onBack={() => setCurrentTab('rutas')}
-                almacenes={almacenes}
-              />
-            )}
-          </PageTransition>
-        </AnimatePresence>
-      </main>
-
-      {/* Footer (Oculto en Terminal RF y Tablet Chofer para maximizar pantalla del dispositivo) */}
-      {currentTab !== 'rf' && currentTab !== 'chofer' && (
-        <footer className="border-t border-[#333333] bg-[#131313] py-4 mt-auto">
-          <div className="max-w-[1680px] mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-[#cdc3d4] gap-2">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-[#e5e2e1]">OpenWMS 3PL</span>
-              <span>&bull;</span>
-              <span>PostgreSQL 17 ACID Transaccional</span>
-              <span>&bull;</span>
-              <span className="font-mono text-[11px] text-[#dab9ff]">
-                Cálculo M3 para Facturación de Espacio
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="inline-flex items-center gap-1 text-[#75d1ff]">
+                  <ShieldCheck className="w-3.5 h-3.5 text-[#75d1ff]" />
+                  Sesión Segura RLS
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-1 text-[#75d1ff]">
-                <ShieldCheck className="w-3.5 h-3.5 text-[#75d1ff]" />
-                Sesión Segura RLS
-              </span>
-            </div>
-          </div>
-        </footer>
-      )}
+          </footer>
+        )}
       </div>
 
       {/* Modal Global para Alta Rápida de Cliente Depositante */}

@@ -29,5 +29,7 @@ export type {
   TokenAccesoPayload,
 } from './programacionApi';
 
-export type * from '../../types/database.types';
+export { operacionesApi } from './operacionesApi';
+export type { Operacion, OperacionInsert, OperacionUpdate, FiltrosOperaciones, EstadisticasOperaciones } from './operacionesApi';
 
+export type * from '../../types/database.types';

@@ -9,6 +9,7 @@ import {
   MapPin,
   RefreshCw,
   Send,
+  Package,
   PackageCheck,
   Plus,
   Zap,
@@ -43,6 +44,9 @@ import {
   ClipboardCheck,
   Edit3,
   Users,
+  Sliders,
+  Trash2,
+  RotateCcw,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { formatDate, formatDateTime, formatNumber, formatM3 } from '@/lib/utils';
@@ -56,6 +60,7 @@ import {
   obtenerUrlVisorGoogleDrive,
   isGoogleDriveConfigured,
 } from '@/lib/googleDriveService';
+import { rfSoundService } from '@/lib/rfSoundService';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 import { getDescripcionFull } from '@/api/articulosApi';
 import { NuevoPedidoModal } from './NuevoPedidoModal';
@@ -75,6 +80,7 @@ import { ControlMuestreoModal } from './ControlMuestreoModal';
 import { ParcializarPedidoModal } from './ParcializarPedidoModal';
 import { ControlCargaModal } from './ControlCargaModal';
 import { EditarRutaSupervisorModal } from './EditarRutaSupervisorModal';
+import { ReasignarTareaPickingModal } from './ReasignarTareaPickingModal';
 
 export type OutboundSubTab = 'pedidos' | 'salidas' | 'rutas';
 
@@ -148,6 +154,20 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
   const pedidosListosParaSalidas = React.useMemo(() => {
     return pedidosPreparados.filter((p) => !pedidosEnRutasIds.has(p.id));
   }, [pedidosPreparados, pedidosEnRutasIds]);
+
+  // Mapa de pedidos asociados a Órdenes de Salida
+  const pedidosEnOrdenesSalidaMap = React.useMemo(() => {
+    const map = new Map<string, any>();
+    (ordenesSalida || []).forEach((os: any) => {
+      (os.pedidos_asociados || []).forEach((pa: any) => {
+        const pid = pa.pedido_id || pa.pedido?.id;
+        if (pid) {
+          map.set(pid, os);
+        }
+      });
+    });
+    return map;
+  }, [ordenesSalida]);
 
   // Pedidos en Ejecución / Picking Activo (Etapa 1)
   const pedidosEnEjecucionEtapa1 = React.useMemo(() => {
@@ -231,6 +251,10 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
   const [editarRutaModalOpen, setEditarRutaModalOpen] = useState(false);
   const [rutaParaEditar, setRutaParaEditar] = useState<any | null>(null);
 
+  // Reasignar Lote de Tarea de Picking Modal
+  const [reasignarTareaModalOpen, setReasignarTareaModalOpen] = useState(false);
+  const [tareaParaReasignar, setTareaParaReasignar] = useState<any | null>(null);
+
   // Picking Task Confirmation Modal
   const [pickingModalOpen, setPickingModalOpen] = useState(false);
   const [activePickingTask, setActivePickingTask] = useState<any | null>(null);
@@ -289,12 +313,24 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
     cargarExtras();
   }, [selectedAlmacenId, selectedClienteId]);
 
-  // Fetch Remitos and Rutas when respective tabs are open
+  // Fetch Remitos and Rutas when respective tabs are open or orders update
   useEffect(() => {
     if (activeSubTab === 'salidas' || activeSubTab === 'rutas') {
       cargarExtras();
     }
   }, [activeSubTab]);
+
+  useEffect(() => {
+    cargarExtras();
+  }, [pedidos, ordenesSalida]);
+
+  useEffect(() => {
+    const handleSync = () => {
+      cargarExtras();
+    };
+    window.addEventListener('wms:data-changed', handleSync);
+    return () => window.removeEventListener('wms:data-changed', handleSync);
+  }, []);
 
   const handleCambiarEstadoRuta = async (
     rutaId: string,
@@ -321,20 +357,17 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
     try {
       await despachosApi.actualizarEstadoRuta(rutaId, nuevoEstado);
 
-      // Si la ruta pasa a 'en_viaje' o 'itinerario_cumplido', despachar automáticamente los pedidos asociados que aún estén preparados o agrupados
-      if (nuevoEstado === 'en_viaje' || nuevoEstado === 'itinerario_cumplido') {
+      // Si la ruta pasa a 'itinerario_cumplido', despachar formalmente los pedidos que hayan sido entregados
+      if (nuevoEstado === 'itinerario_cumplido') {
         const rutaActual = rutasConParadas.find((r) => r.id === rutaId);
         if (rutaActual && rutaActual.paradas) {
           for (const parada of rutaActual.paradas) {
             const pedidoId = parada.pedido_id || parada.pedido?.id;
             if (pedidoId) {
-              const ped = pedidos.find((p) => p.id === pedidoId);
-              if (ped && ped.estado !== 'despachado') {
-                try {
-                  await pedidosApi.despacharPedido(pedidoId);
-                } catch (despErr) {
-                  console.warn(`Error al auto-despachar pedido ${pedidoId} en salida de ruta:`, despErr);
-                }
+              try {
+                await pedidosApi.despacharPedido(pedidoId);
+              } catch (despErr) {
+                console.warn(`Error al auto-despachar pedido ${pedidoId} al cerrar ruta:`, despErr);
               }
             }
           }
@@ -385,7 +418,8 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
       await despachosApi.registrarEntregaParada({
         paradaId: paradaParaEntregaSupervisor.id,
         rutaId: paradaParaEntregaSupervisor.ruta_id,
-        pedidoId: paradaParaEntregaSupervisor.pedido_id,
+        pedidoId: paradaParaEntregaSupervisor.pedido_id || (paradaParaEntregaSupervisor.pedido as any)?.id || (paradaParaEntregaSupervisor.remito as any)?.pedido_id,
+        remitoId: paradaParaEntregaSupervisor.remito_id || (paradaParaEntregaSupervisor.remito as any)?.id,
         estadoEntrega: 'entregado',
         receptorNombre: receptorSupervisorNombre.trim() || 'Conforme Recepción',
         receptorDocumento: receptorSupervisorDni.trim() || undefined,
@@ -599,6 +633,93 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
     }
   };
 
+  // Borrar Asignaciones / Reiniciar a Ingresado desde cero
+  const handleDeshacerAsignaciones = async (pedidoId: string) => {
+    const ped = pedidos.find((p) => p.id === pedidoId) || selectedPedido || detailData;
+    const numPed = ped?.numero_pedido || ped?.orden_compra_cliente || 'este pedido';
+
+    if (
+      !window.confirm(
+        `¿Deseas borrar todas las asignaciones y tareas de picking del pedido ${numPed}?\n\n• Se cancelarán las tareas de picking pendientes.\n• Se liberará todo el stock reservado volviéndolo disponible.\n• El pedido volverá al estado 'ingresado' para arrancar de 0.`
+      )
+    ) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setFeedbackMsg(null);
+    try {
+      await pedidosApi.deshacerAsignacionPicking(pedidoId);
+      rfSoundService.playSuccess();
+      setFeedbackMsg({
+        type: 'success',
+        text: `¡Asignaciones eliminadas! Se liberaron las reservas de stock y el pedido ${numPed} volvió a estado Ingresado para arrancar desde cero.`,
+      });
+
+      onRefresh();
+      if (selectedPedido?.id === pedidoId) {
+        try {
+          const freshData = await pedidosApi.obtenerPedidoConDetalle(pedidoId);
+          setDetailData(freshData);
+          setSelectedPedido(freshData);
+        } catch (fetchErr) {
+          console.warn('Aviso refrescando detalle:', fetchErr);
+        }
+      }
+    } catch (err: any) {
+      console.error('Error al deshacer asignaciones de picking:', err);
+      rfSoundService.playError();
+      setFeedbackMsg({
+        type: 'error',
+        text: err.message || 'Error al deshacer asignaciones de picking en base de datos',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Cancelar una sola tarea de picking
+  const handleCancelarTareaPicking = async (tareaId: string) => {
+    if (
+      !window.confirm(
+        '¿Deseas cancelar esta tarea de picking? La cantidad reservada será devuelta al stock disponible.'
+      )
+    ) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    setFeedbackMsg(null);
+    try {
+      await pedidosApi.cancelarTareaPicking(tareaId);
+      rfSoundService.playSuccess();
+      setFeedbackMsg({
+        type: 'success',
+        text: 'Tarea de picking cancelada y stock liberado exitosamente.',
+      });
+
+      onRefresh();
+      if (selectedPedido?.id) {
+        try {
+          const freshData = await pedidosApi.obtenerPedidoConDetalle(selectedPedido.id);
+          setDetailData(freshData);
+          setSelectedPedido(freshData);
+        } catch (fetchErr) {
+          console.warn('Aviso refrescando detalle:', fetchErr);
+        }
+      }
+    } catch (err: any) {
+      console.error('Error al cancelar tarea de picking:', err);
+      rfSoundService.playError();
+      setFeedbackMsg({
+        type: 'error',
+        text: err.message || 'Error al cancelar la tarea de picking',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Confirm Picking with Shortage/Novelty Support
   const handleConfirmPicking = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -664,12 +785,15 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
     });
   }, [pedidosEnEjecucionEtapa1, filtroEstado]);
 
-  const getStatusBadge = (estado: string) => {
+  const getStatusBadge = (estado: string, modalidad?: string) => {
     switch (estado) {
       case 'despachado':
-        return <Badge variant="success">Despachado</Badge>;
+        if (modalidad === 'retiro_deposito') {
+          return <Badge variant="success">Despachado</Badge>;
+        }
+        return <Badge variant="success">Entregado</Badge>;
       case 'agrupado_salida':
-        return <Badge variant="info">Remitido / Ruta</Badge>;
+        return <Badge variant="info">Agrupado en Salida</Badge>;
       case 'preparado':
         return <Badge variant="success">Preparado (Listo)</Badge>;
       case 'en_picking':
@@ -680,6 +804,96 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
         return <Badge variant="default">Ingresado (Pendiente)</Badge>;
       default:
         return <Badge variant="outline">{estado || 'Pendiente'}</Badge>;
+    }
+  };
+
+  const getOrdenSalidaBadge = (estado: string) => {
+    switch (estado) {
+      case 'planificacion':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 text-slate-700 border border-slate-300 dark:bg-[#201f1f] dark:text-[#cdc3d4] dark:border-[#383838]">
+            🔘 Planificación
+          </span>
+        );
+      case 'consolidando_pallets':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-300 dark:bg-[#2b1c09] dark:text-[#ffddb8] dark:border-[#7a4c10]">
+            🟡 Consolidando Pallets
+          </span>
+        );
+      case 'remitida':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-50 text-sky-800 border border-sky-300 dark:bg-[#10242b] dark:text-[#75d1ff] dark:border-[#1e4859]">
+            📄 Remitida (Rx 100%)
+          </span>
+        );
+      case 'cargando':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-400 dark:bg-[#38260a] dark:text-[#ffba28] dark:border-[#7a4c10]">
+            🟠 En Carga (Muelle)
+          </span>
+        );
+      case 'en_transito':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 dark:bg-[#0f281e] dark:text-[#69f0ae] dark:border-[#1b5037] inline-flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+            🟢 En Tránsito
+          </span>
+        );
+      case 'cerrada':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-50 text-purple-800 border border-purple-300 dark:bg-[#251733] dark:text-[#e4b5ff] dark:border-[#4d2d6b]">
+            🏁 Cerrada
+          </span>
+        );
+      default:
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-600 dark:bg-[#222] dark:text-[#aaa]">
+            {estado || 'Planificación'}
+          </span>
+        );
+    }
+  };
+
+  const getRemitoBadge = (estado: string) => {
+    switch (estado) {
+      case 'emitido':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-50 text-sky-800 border border-sky-200 dark:bg-[#10242b] dark:text-[#75d1ff] dark:border-[#1e4859]">
+            📄 Emitido
+          </span>
+        );
+      case 'en_transito':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-300 dark:bg-[#0f281e] dark:text-[#69f0ae] dark:border-[#1b5037] inline-flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+            🟢 En Tránsito
+          </span>
+        );
+      case 'entregado_conforme':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-100 text-emerald-900 border border-emerald-400 dark:bg-[#143d2c] dark:text-[#69f0ae] dark:border-[#256e4c]">
+            ✅ Entregado Conforme
+          </span>
+        );
+      case 'rechazado_parcial':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-900 border border-amber-300 dark:bg-[#38260a] dark:text-[#ffddb8] dark:border-[#7a4c10]">
+            ⚠️ Desvío / Novedad
+          </span>
+        );
+      case 'rechazado_total':
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-50 text-rose-900 border border-rose-300 dark:bg-[#3b1218] dark:text-[#ffb4ab] dark:border-[#6b161f]">
+            ⛔ Rechazado Total
+          </span>
+        );
+      default:
+        return (
+          <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-600 dark:bg-[#222] dark:text-[#aaa]">
+            {estado || 'Emitido'}
+          </span>
+        );
     }
   };
 
@@ -971,7 +1185,7 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                               <span className="font-mono font-bold text-sm text-slate-900 dark:text-[#e5e2e1]">
                                 {ped.numero_pedido}
                               </span>
-                              {getStatusBadge(ped.estado)}
+                              {getStatusBadge(ped.estado, ped.modalidad_entrega)}
                               {ped.modalidad_entrega === 'retiro_deposito' ? (
                                 <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-[#142e1d] dark:text-[#78d492] dark:border-[#2a683b] inline-flex items-center gap-1">
                                   <Warehouse className="w-3 h-3" />
@@ -1165,6 +1379,19 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    handleDeshacerAsignaciones(ped.id);
+                                  }}
+                                  disabled={isSubmitting}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 dark:bg-[#341014] dark:text-[#ffb4ab] dark:border-[#690005] transition-colors shadow-xs"
+                                  title="Borrar las asignaciones y tareas de picking de este pedido, liberar reservas y volver a ingresado desde 0"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>Reiniciar a 0</span>
+                                </button>
+
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     handleSelectPedido(ped);
                                   }}
                                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-semibold bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 dark:bg-[#1a1919] dark:text-[#e5e2e1] dark:border-[#383737] transition-colors shadow-xs"
@@ -1281,7 +1508,7 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                               </span>
                             </td>
                             <td className="px-2.5 py-2 text-center">
-                              {getStatusBadge(ped.estado)}
+                              {getStatusBadge(ped.estado, ped.modalidad_entrega)}
                             </td>
                             <td className="px-3 py-2 text-center">
                               <div className="flex items-center justify-center gap-1.5 flex-wrap">
@@ -1396,8 +1623,11 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                 {/* Pedido Status Actions Header */}
                 <div className="p-3.5 bg-slate-50/80 dark:bg-[#201f1f]/60 border-b border-slate-200 dark:border-[#333333] flex flex-wrap items-center justify-between gap-2 flex-shrink-0">
                   <div>
-                    <span className="text-[10px] text-slate-500 dark:text-[#cdc3d4] uppercase block">Estado Actual</span>
-                    <span className="font-mono text-xs font-bold text-slate-900 dark:text-[#e5e2e1]">{selectedPedido.estado}</span>
+                    <span className="text-[10px] text-slate-500 dark:text-[#cdc3d4] uppercase block mb-1">Estado Actual</span>
+                    <div className="flex items-center gap-1.5">
+                      {getStatusBadge(selectedPedido.estado, selectedPedido.modalidad_entrega)}
+                      <span className="font-mono text-xs text-slate-500 dark:text-[#cdc3d4]">({selectedPedido.estado})</span>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -1448,6 +1678,17 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                         >
                           <Barcode className="w-3.5 h-3.5" />
                           Etiquetas LPN
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeshacerAsignaciones(selectedPedido.id)}
+                          disabled={isSubmitting}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 dark:bg-[#341014] dark:hover:bg-[#48171c] dark:text-[#ffb4ab] dark:border-[#690005] transition-colors shadow-xs"
+                          title="Borrar las asignaciones y tareas de picking de este pedido, liberar reservas y volver a arrancar de 0"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Borrar Asignaciones (Arrancar de 0)</span>
                         </button>
                       </>
                     )}
@@ -1691,7 +1932,33 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                                   )}
 
                                   {t.estado !== 'completada' && (
-                                    <div className="pt-1.5 flex justify-end">
+                                    <div className="pt-1.5 flex items-center justify-end gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCancelarTareaPicking(t.id)}
+                                        disabled={isSubmitting}
+                                        className="px-2.5 py-1 text-xs font-semibold rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-600 dark:text-rose-400 border border-rose-500/30 transition-colors shadow-xs flex items-center gap-1.5"
+                                        title="Cancelar y descartar esta tarea de picking específica, liberando su reserva al stock disponible"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <span>Cancelar Tarea</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setTareaParaReasignar({
+                                            ...t,
+                                            pedido: selectedPedido || detailData,
+                                            articulo: det.articulo,
+                                          });
+                                          setReasignarTareaModalOpen(true);
+                                        }}
+                                        className="px-2.5 py-1 text-xs font-semibold rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 border border-amber-500/30 transition-colors shadow-xs flex items-center gap-1.5"
+                                        title="Reasignar lote, posición física o cantidad de esta tarea"
+                                      >
+                                        <Sliders className="w-3.5 h-3.5" />
+                                        <span>Reasignar Lote</span>
+                                      </button>
                                       <button
                                         onClick={() => {
                                           setActivePickingTask(t);
@@ -1898,7 +2165,14 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                             )}
                           </td>
                           <td className="px-2.5 py-2 text-center">
-                            {getStatusBadge(ped.estado)}
+                            <div className="flex flex-col items-center gap-1">
+                              {getStatusBadge(ped.estado, ped.modalidad_entrega)}
+                              {pedidosEnOrdenesSalidaMap.get(ped.id) && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-mono font-bold bg-violet-100 text-violet-800 dark:bg-[#321d4d] dark:text-[#dab9ff] border border-violet-200 dark:border-[#521394]" title={`Agrupado en ${pedidosEnOrdenesSalidaMap.get(ped.id)?.numero_orden_salida}`}>
+                                  OS: {pedidosEnOrdenesSalidaMap.get(ped.id)?.numero_orden_salida}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex items-center justify-center gap-1 flex-wrap">
@@ -2019,15 +2293,163 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
             )}
           </div>
 
-          {/* SUB-SECCIÓN 2: HISTORIAL DE REMITOS RX DE TRÁNSITO EMITIDOS */}
+          {/* SUB-SECCIÓN 2: ÓRDENES DE SALIDA CONSOLIDADAS Y MÁQUINA DE ESTADOS */}
+          <div className="bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] rounded-xl overflow-hidden shadow-xs">
+            <div className="p-3.5 bg-slate-50 dark:bg-[#201f1f] border-b border-slate-200 dark:border-[#333333] flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="text-xs font-bold text-slate-900 dark:text-[#e5e2e1] uppercase tracking-wider flex items-center gap-2">
+                  <Truck className="w-4 h-4 text-violet-600 dark:text-[#dab9ff]" />
+                  2. Órdenes de Salida Consolidadas ({ordenesSalida.length})
+                </span>
+                <p className="text-[11px] text-slate-500 dark:text-[#978d9d] mt-0.5">
+                  Agrupación multi-pedido para expedición y seguimiento del ciclo de vida (Planificación ➔ Remitida ➔ En Carga ➔ En Tránsito ➔ Cerrada).
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAsignarRutaOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-violet-600 hover:bg-violet-700 text-white dark:bg-[#dab9ff] dark:hover:bg-[#eedbff] dark:text-[#460283] transition-all shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Nueva Salida / Ruta</span>
+                </button>
+              </div>
+            </div>
+
+            {ordenesSalida.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 dark:text-[#978d9d] px-4">
+                <Truck className="w-7 h-7 mx-auto mb-1.5 opacity-40 text-violet-600 dark:text-[#dab9ff]" />
+                <p className="text-xs font-semibold text-slate-700 dark:text-[#cdc3d4]">
+                  No hay órdenes de salida registradas.
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-[#978d9d] mt-0.5">
+                  Selecciona pedidos preparados arriba y haz clic en &quot;Planificar en Hoja de Ruta&quot; para consolidar una salida.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 dark:bg-[#201f1f] text-slate-700 dark:text-[#cdc3d4] border-b border-slate-200 dark:border-[#44424a]">
+                    <tr>
+                      <th className="px-3 py-2 text-[11px] font-semibold">N° Orden Salida</th>
+                      <th className="px-3 py-2 text-[11px] font-semibold">Almacén</th>
+                      <th className="px-3 py-2 text-[11px] font-semibold">Fecha Programada</th>
+                      <th className="px-2.5 py-2 text-[11px] font-semibold text-center">Estado Flujo WMS</th>
+                      <th className="px-3 py-2 text-[11px] font-semibold">Pedidos Asociados</th>
+                      <th className="px-2.5 py-2 text-[11px] font-semibold text-center">Remitos Rx</th>
+                      <th className="px-3 py-2 text-[11px] font-semibold">Hoja de Ruta</th>
+                      <th className="px-3 py-2 text-[11px] font-semibold text-center">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-[#44424a]">
+                    {ordenesSalida.map((os: any) => {
+                      const pedidosAsoc = os.pedidos_asociados || [];
+                      const cantPedidos = pedidosAsoc.length;
+                      const remitosVinculados = remitosList.filter((r: any) => r.orden_salida_id === os.id);
+                      const cantRemitos = remitosVinculados.length;
+                      const rutaInfo = Array.isArray(os.ruta) ? os.ruta[0] : os.ruta;
+
+                      return (
+                        <tr key={os.id} className="hover:bg-slate-50 dark:hover:bg-[#201f1f]/50 transition-colors">
+                          <td className="px-3 py-2 font-mono font-bold text-violet-700 dark:text-[#dab9ff]">
+                            {os.numero_orden_salida}
+                          </td>
+                          <td className="px-3 py-2 text-slate-700 dark:text-[#cdc3d4]">
+                            {os.almacen?.nombre || 'Almacén Central'}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-[11px] text-slate-600 dark:text-[#cdc3d4]">
+                            {os.fecha_salida_programada ? formatDate(os.fecha_salida_programada) : 'Inmediata'}
+                          </td>
+                          <td className="px-2.5 py-2 text-center">
+                            {getOrdenSalidaBadge(os.estado)}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="px-1.5 py-0.5 rounded font-mono font-bold bg-slate-100 text-slate-800 dark:bg-[#2a2a2a] dark:text-[#e5e2e1] text-[10px]">
+                                {cantPedidos} pedido(s)
+                              </span>
+                              {pedidosAsoc.slice(0, 3).map((pa: any) => (
+                                <span
+                                  key={pa.pedido?.id || Math.random()}
+                                  className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-violet-50 text-violet-700 border border-violet-200 dark:bg-[#251733] dark:text-[#dab9ff] dark:border-[#521394]"
+                                >
+                                  {pa.pedido?.numero_pedido || 'Ped'}
+                                </span>
+                              ))}
+                              {cantPedidos > 3 && (
+                                <span className="text-[10px] text-slate-400">+{cantPedidos - 3} más</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-2.5 py-2 text-center">
+                            <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] ${
+                              cantRemitos >= cantPedidos && cantPedidos > 0
+                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 dark:bg-[#0f281e] dark:text-[#69f0ae]'
+                                : cantRemitos > 0
+                                ? 'bg-amber-50 text-amber-800 border border-amber-300 dark:bg-[#2b1c09] dark:text-[#ffddb8]'
+                                : 'bg-slate-100 text-slate-600 border border-slate-200 dark:bg-[#222] dark:text-[#999]'
+                            }`}>
+                              {cantRemitos} / {cantPedidos} Rx
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            {rutaInfo ? (
+                              <div className="space-y-0.5">
+                                <span className="font-mono font-bold text-emerald-700 dark:text-[#69f0ae] text-[11px] block">
+                                  {rutaInfo.codigo_ruta}
+                                </span>
+                                <span className="text-[10px] text-slate-500 dark:text-[#978d9d] block truncate">
+                                  {rutaInfo.chofer_nombre} • {rutaInfo.vehiculo_patente}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 italic">Sin ruta asignada</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {rutaInfo ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSubTabChange('rutas')}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200 dark:bg-[#142820] dark:text-[#69f0ae] dark:border-[#214a38] transition-colors"
+                                  title="Ver en Etapa 3 (Ruteos)"
+                                >
+                                  <Truck className="w-3 h-3" />
+                                  <span>Ver Ruta</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setAsignarRutaOpen(true)}
+                                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded bg-sky-50 text-sky-800 hover:bg-sky-100 border border-sky-200 dark:bg-[#10242b] dark:text-[#75d1ff] dark:border-[#1e4859] transition-colors"
+                                  title="Asignar Hoja de Ruta para esta Orden de Salida"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>Asignar Ruta</span>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* SUB-SECCIÓN 3: HISTORIAL DE REMITOS RX DE TRÁNSITO EMITIDOS */}
           <div className="bg-white dark:bg-[#1c1b1b] border border-slate-200 dark:border-[#333333] rounded-xl overflow-hidden shadow-xs">
             <div className="p-3.5 bg-slate-50 dark:bg-[#201f1f] border-b border-slate-200 dark:border-[#333333] flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-bold text-slate-900 dark:text-[#e5e2e1] flex items-center gap-2">
                 <FileText className="w-4 h-4 text-emerald-600 dark:text-[#69f0ae]" />
-                2. Remitos de Tránsito Rx Emitidos ({remitosList.length})
+                3. Remitos de Tránsito Rx Emitidos ({remitosList.length})
               </span>
               <span className="text-[11px] text-slate-500 dark:text-[#cdc3d4] font-mono">
-                Comprobantes fiscales de amparo de carga en viaje (AFIP / Remito Electrónico)
+                Comprobantes fiscales de amparo de carga en viaje y vinculación con Órdenes de Salida
               </span>
             </div>
 
@@ -2036,6 +2458,8 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                 <thead className="bg-slate-50 dark:bg-[#201f1f] text-slate-700 dark:text-[#cdc3d4] border-b border-slate-200 dark:border-[#44424a]">
                   <tr>
                     <th className="px-3 py-2 text-[11px] font-semibold">N° Remito Rx</th>
+                    <th className="px-3 py-2 text-[11px] font-semibold">Orden de Salida</th>
+                    <th className="px-2.5 py-2 text-[11px] font-semibold text-center">Estado Remito</th>
                     <th className="px-3 py-2 text-[11px] font-semibold">Fecha Emisión</th>
                     <th className="px-3 py-2 text-[11px] font-semibold">Cliente Depositante</th>
                     <th className="px-3 py-2 text-[11px] font-semibold">Destinatario / Ciudad</th>
@@ -2049,14 +2473,14 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                 <tbody className="divide-y divide-slate-100 dark:divide-[#44424a]">
                   {loadingExtras ? (
                     <tr>
-                      <td colSpan={9} className="py-8 text-center text-slate-400 dark:text-[#cdc3d4]">
+                      <td colSpan={11} className="py-8 text-center text-slate-400 dark:text-[#cdc3d4]">
                         <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-violet-600 dark:text-[#dab9ff]" />
                         Cargando remitos...
                       </td>
                     </tr>
                   ) : remitosList.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-12 text-center text-slate-400 dark:text-[#cdc3d4]">
+                      <td colSpan={11} className="py-12 text-center text-slate-400 dark:text-[#cdc3d4]">
                         No hay remitos Rx emitidos aún. Consolidar un pedido preparado arriba para emitir su remito.
                       </td>
                     </tr>
@@ -2074,6 +2498,27 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                             </span>
                           )}
                         </td>
+                        <td className="px-3 py-1.5">
+                          {rem.orden_salida?.numero_orden_salida ? (
+                            <div className="space-y-0.5">
+                              <span className="font-mono font-bold text-violet-700 dark:text-[#dab9ff] text-[11px] block">
+                                {rem.orden_salida.numero_orden_salida}
+                              </span>
+                              {getOrdenSalidaBadge(rem.orden_salida.estado)}
+                            </div>
+                          ) : rem.orden_salida_id ? (
+                            <span className="font-mono text-violet-700 dark:text-[#dab9ff] text-[10px]">
+                              OS Vinculada
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 italic">
+                              Pick-up / Sin OS
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-2.5 py-1.5 text-center">
+                          {getRemitoBadge(rem.estado)}
+                        </td>
                         <td className="px-3 py-1.5 font-mono text-slate-500 dark:text-[#cdc3d4] text-[11px]">
                           {formatDateTime(rem.fecha_emision)}
                         </td>
@@ -2089,10 +2534,10 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
                         <td className="px-2.5 py-1.5 text-center font-mono text-slate-600 dark:text-[#cdc3d4]">
                           {rem.total_pallets}
                         </td>
-                        <td className="px-2.5 py-1.5 text-right font-mono text-slate-600 dark:text-[#cdc3d4]">
+                        <td className="px-2.5 py-2 text-right font-mono text-slate-600 dark:text-[#cdc3d4]">
                           {formatNumber(rem.peso_total_kg, 2)}
                         </td>
-                        <td className="px-2.5 py-1.5 text-right font-mono font-semibold text-sky-700 dark:text-[#75d1ff]">
+                        <td className="px-2.5 py-2 text-right font-mono font-semibold text-sky-700 dark:text-[#75d1ff]">
                           {formatM3(rem.volumen_total_m3)}
                         </td>
                         <td className="px-3 py-1.5 text-center">
@@ -3597,6 +4042,25 @@ export const OutboundMonitor: React.FC<OutboundMonitorProps> = ({
           onSuccess={() => {
             setAsignacionPickingModalOpen(false);
             setPedidoParaAsignarPicking(null);
+            refrescarTodo();
+          }}
+        />
+      )}
+
+      {/* Modal Reasignar Lote / Posición de Tarea de Picking */}
+      {reasignarTareaModalOpen && tareaParaReasignar && (
+        <ReasignarTareaPickingModal
+          isOpen={reasignarTareaModalOpen}
+          onClose={() => {
+            setReasignarTareaModalOpen(false);
+            setTareaParaReasignar(null);
+          }}
+          tarea={tareaParaReasignar}
+          clienteId={selectedPedido?.cliente_id || detailData?.cliente_id}
+          onSuccess={() => {
+            setReasignarTareaModalOpen(false);
+            setTareaParaReasignar(null);
+            if (selectedPedido) handleSelectPedido(selectedPedido);
             refrescarTodo();
           }}
         />

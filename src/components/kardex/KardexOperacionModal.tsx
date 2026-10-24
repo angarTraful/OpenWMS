@@ -52,12 +52,26 @@ export const KardexOperacionModal: React.FC<KardexOperacionModalProps> = ({
           icon: <ArrowDownLeft className="w-5 h-5 text-emerald-600 dark:text-[#75d1ff]" />,
           bgHeader: 'bg-emerald-50/70 border-emerald-200 dark:bg-[#0f241a]/60 dark:border-[#1d4d38]',
         };
-      case 'despacho':
+      case 'entregado':
         return {
-          label: 'Salida / Despacho',
-          badge: <Badge variant="danger" dot>Salida / Despacho</Badge>,
+          label: 'Salida / Entregado',
+          badge: <Badge variant="danger" dot>Entregado</Badge>,
           icon: <ArrowUpRight className="w-5 h-5 text-rose-600 dark:text-[#ffb4ab]" />,
           bgHeader: 'bg-rose-50/70 border-rose-200 dark:bg-[#2a0e12]/60 dark:border-[#690005]',
+        };
+      case 'despacho':
+        return {
+          label: 'Salida / Despachado',
+          badge: <Badge variant="danger" dot>Despachado</Badge>,
+          icon: <ArrowUpRight className="w-5 h-5 text-rose-600 dark:text-[#ffb4ab]" />,
+          bgHeader: 'bg-rose-50/70 border-rose-200 dark:bg-[#2a0e12]/60 dark:border-[#690005]',
+        };
+      case 'paletizado_despacho':
+        return {
+          label: 'Paletizado Salida',
+          badge: <Badge variant="warning">Paletizado Salida</Badge>,
+          icon: <Box className="w-5 h-5 text-amber-600 dark:text-[#ffddb8]" />,
+          bgHeader: 'bg-amber-50/70 border-amber-200 dark:bg-[#2b1c09]/60 dark:border-[#7a4c10]',
         };
       case 'picking':
         return {

@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
 import type { Database } from '../../types/database.types';
+import { notifyDataChanged } from '../lib/dataSync';
 
 export type RegistroInventario = Database['public']['Tables']['inventario']['Row'];
 export type MovimientoInventario = Database['public']['Tables']['movimientos_inventario']['Row'];
@@ -271,6 +272,7 @@ export async function procesarMovimientoInventario(
       { p_movimiento: movimiento }
     );
     if (!error && data) {
+      notifyDataChanged();
       return data;
     }
     if (error && error.message && !error.message.includes('function') && !error.message.includes('not found')) {
@@ -645,6 +647,7 @@ export async function procesarMovimientoInventario(
 
   if (movErr) throw movErr;
 
+  notifyDataChanged();
   return {
     ok: true,
     movimiento_id: movRow?.id,
@@ -694,6 +697,7 @@ export async function importarMovimientosMasivos(
     );
 
     if (!error && data) {
+      notifyDataChanged();
       return data as ResultadoImportacionMovimientos;
     }
   } catch (rpcErr) {
@@ -722,6 +726,7 @@ export async function importarMovimientosMasivos(
     }
   }
 
+  notifyDataChanged();
   return {
     ok: errores.length === 0,
     total: movimientos.length,

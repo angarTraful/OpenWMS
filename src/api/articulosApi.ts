@@ -164,36 +164,47 @@ export const articulosApi = {
 
   // --- Categorías y Subcategorías ---
   async listarCategorias(soloActivas = true): Promise<CategoriaConSubcategorias[]> {
+    let query = supabase
+      .from('categorias_articulos')
+      .select('*')
+      .order('nombre', { ascending: true });
+
+    if (soloActivas) {
+      query = query.eq('activo', true);
+    }
+
+    const { data: categorias, error } = await query;
+    if (error) throw error;
+
+    // Obtener subcategorías desacopladas si existen para agrupar en memoria
     try {
-      let query = supabase
-        .from('categorias_articulos')
-        .select(`
-          *,
-          subcategorias:subcategorias_articulos(*)
-        `)
-        .order('nombre', { ascending: true });
-
-      if (soloActivas) {
-        query = query.eq('activo', true);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-      return (data as any) || [];
-    } catch (err) {
-      console.warn('Fallback en listarCategorias sin subcategorias anidadas:', err);
-      let query = supabase
-        .from('categorias_articulos')
+      let subQuery = supabase
+        .from('subcategorias_articulos')
         .select('*')
         .order('nombre', { ascending: true });
 
       if (soloActivas) {
-        query = query.eq('activo', true);
+        subQuery = subQuery.eq('activo', true);
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      return ((data as any) || []).map((c: any) => ({ ...c, subcategorias: [] }));
+      const { data: subcategorias } = await subQuery;
+      const subcatMap = new Map<string, any[]>();
+      (subcategorias || []).forEach((s: any) => {
+        if (s.categoria_id) {
+          if (!subcatMap.has(s.categoria_id)) subcatMap.set(s.categoria_id, []);
+          subcatMap.get(s.categoria_id)!.push(s);
+        }
+      });
+
+      return (categorias || []).map((c: any) => ({
+        ...c,
+        subcategorias: subcatMap.get(c.id) || [],
+      }));
+    } catch {
+      return (categorias || []).map((c: any) => ({
+        ...c,
+        subcategorias: [],
+      }));
     }
   },
 

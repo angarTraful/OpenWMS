@@ -1,5 +1,7 @@
 import { supabase } from './supabaseClient';
+import { pedidosApi } from './pedidosApi';
 import type { Database } from '../../types/database.types';
+import { notifyDataChanged } from '../lib/dataSync';
 
 export type OrdenSalida = Database['public']['Tables']['ordenes_salida']['Row'];
 export type RemitoTransito = Database['public']['Tables']['remitos_transito']['Row'];
@@ -51,13 +53,121 @@ export const despachosApi = {
     const { error: errVinculos } = await supabase.from('ordenes_salida_pedidos').insert(vinculos);
     if (errVinculos) throw errVinculos;
 
+    if (pedidosIds.length > 0) {
+      // 1. Actualizar estado de los pedidos a 'agrupado_salida' si estaban en 'preparado'
+      await supabase
+        .from('pedidos')
+        .update({ estado: 'agrupado_salida', actualizado_en: new Date().toISOString() })
+        .in('id', pedidosIds)
+        .eq('estado', 'preparado');
+
+      // 2. Vincular remitos de tránsito existentes de estos pedidos a la nueva orden de salida
+      await supabase
+        .from('remitos_transito')
+        .update({ orden_salida_id: orden.id })
+        .in('pedido_id', pedidosIds);
+
+      // 3. Sincronizar estado inicial de la orden de salida
+      await despachosApi.sincronizarEstadoOrdenSalida(orden.id);
+    }
+
+    notifyDataChanged();
     return orden;
+  },
+
+  // --- Actualizar Estado de Orden de Salida ---
+  async actualizarEstadoOrdenSalida(
+    ordenSalidaId: string,
+    nuevoEstado: 'planificacion' | 'consolidando_pallets' | 'remitida' | 'cargando' | 'en_transito' | 'cerrada'
+  ) {
+    const { data, error } = await supabase
+      .from('ordenes_salida')
+      .update({
+        estado: nuevoEstado,
+        actualizado_en: new Date().toISOString()
+      })
+      .eq('id', ordenSalidaId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    notifyDataChanged();
+    return data;
+  },
+
+  // --- Sincronizar Estado de Orden de Salida con Rutas y Remitos ---
+  async sincronizarEstadoOrdenSalida(ordenSalidaId: string) {
+    if (!ordenSalidaId) return null;
+    try {
+      const { data: orden, error: errOrden } = await supabase
+        .from('ordenes_salida')
+        .select(`
+          id,
+          estado,
+          pedidos_asociados:ordenes_salida_pedidos(pedido_id),
+          ruta:rutas_entrega(id, estado)
+        `)
+        .eq('id', ordenSalidaId)
+        .single();
+
+      if (errOrden || !orden) return null;
+
+      const ruta = Array.isArray(orden.ruta) ? orden.ruta[0] : orden.ruta;
+      let estadoDeseado: 'planificacion' | 'consolidando_pallets' | 'remitida' | 'cargando' | 'en_transito' | 'cerrada' = orden.estado;
+
+      if (ruta) {
+        if (ruta.estado === 'itinerario_cumplido') {
+          estadoDeseado = 'cerrada';
+        } else if (ruta.estado === 'en_viaje') {
+          estadoDeseado = 'en_transito';
+        } else if (ruta.estado === 'en_carga') {
+          estadoDeseado = 'cargando';
+        }
+      }
+
+      if (!ruta || (ruta.estado !== 'en_viaje' && ruta.estado !== 'en_carga' && ruta.estado !== 'itinerario_cumplido')) {
+        const pedidoIds = (orden.pedidos_asociados || []).map((p: any) => p.pedido_id);
+        if (pedidoIds.length > 0) {
+          const { data: remitos } = await supabase
+            .from('remitos_transito')
+            .select('id, pedido_id')
+            .in('pedido_id', pedidoIds);
+
+          const remitosPedidosSet = new Set((remitos || []).map((r: any) => r.pedido_id));
+          const totalPedidos = pedidoIds.length;
+          const pedidosConRemito = pedidoIds.filter((pid: string) => remitosPedidosSet.has(pid)).length;
+
+          if (pedidosConRemito === totalPedidos && totalPedidos > 0) {
+            estadoDeseado = 'remitida';
+          } else if (pedidosConRemito > 0) {
+            estadoDeseado = 'consolidando_pallets';
+          } else {
+            estadoDeseado = 'planificacion';
+          }
+        }
+      }
+
+      if (orden.estado !== estadoDeseado) {
+        const { data: updated } = await supabase
+          .from('ordenes_salida')
+          .update({ estado: estadoDeseado, actualizado_en: new Date().toISOString() })
+          .eq('id', ordenSalidaId)
+          .select()
+          .single();
+        return updated;
+      }
+      return orden;
+    } catch (e) {
+      console.warn('Error sincronizando estado orden salida:', e);
+      return null;
+    }
   },
 
   // --- Remito Rx de Tránsito ---
   async emitirRemitoRx(remito: Database['public']['Tables']['remitos_transito']['Insert']) {
     const { data, error } = await supabase.from('remitos_transito').insert(remito).select().single();
     if (error) throw error;
+    notifyDataChanged();
     return data;
   },
 
@@ -90,6 +200,25 @@ export const despachosApi = {
       .select();
     if (errParadas) throw errParadas;
 
+    // Asegurar que los remitos de las paradas tengan orden_salida_id
+    if (ruta.orden_salida_id) {
+      for (const p of paradas) {
+        if (p.remito_id) {
+          await supabase
+            .from('remitos_transito')
+            .update({ orden_salida_id: ruta.orden_salida_id })
+            .eq('id', p.remito_id);
+        } else if (p.pedido_id) {
+          await supabase
+            .from('remitos_transito')
+            .update({ orden_salida_id: ruta.orden_salida_id })
+            .eq('pedido_id', p.pedido_id);
+        }
+      }
+      await despachosApi.sincronizarEstadoOrdenSalida(ruta.orden_salida_id);
+    }
+
+    notifyDataChanged();
     return { ruta: nuevaRuta, itinerario: paradasCreadas };
   },
 
@@ -101,7 +230,8 @@ export const despachosApi = {
         *,
         cliente:clientes(id, razon_social, codigo),
         destinatario:destinatarios(id, razon_social, direccion_entrega, ciudad),
-        pedido:pedidos(id, numero_pedido)
+        pedido:pedidos(id, numero_pedido, estado),
+        orden_salida:ordenes_salida(id, numero_orden_salida, estado)
       `)
       .order('fecha_emision', { ascending: false });
 
@@ -215,22 +345,70 @@ export const despachosApi = {
       updatePayload.fecha_hora_salida_real = fechaSalidaReal || new Date().toISOString();
     }
 
-    const { data, error } = await supabase
+    const { data: rutaActualizada, error } = await supabase
       .from('rutas_entrega')
       .update(updatePayload)
       .eq('id', rutaId)
-      .select()
+      .select(`
+        *,
+        paradas:rutas_paradas_itinerario(*)
+      `)
       .single();
 
     if (error) throw error;
-    return data;
+
+    const ordenSalidaId = rutaActualizada?.orden_salida_id;
+    if (ordenSalidaId) {
+      if (nuevoEstado === 'en_carga') {
+        await supabase
+          .from('ordenes_salida')
+          .update({ estado: 'cargando', actualizado_en: new Date().toISOString() })
+          .eq('id', ordenSalidaId);
+      } else if (nuevoEstado === 'en_viaje') {
+        await supabase
+          .from('ordenes_salida')
+          .update({ estado: 'en_transito', actualizado_en: new Date().toISOString() })
+          .eq('id', ordenSalidaId);
+
+        // Actualizar remitos de la orden a 'en_transito'
+        await supabase
+          .from('remitos_transito')
+          .update({ estado: 'en_transito', orden_salida_id: ordenSalidaId } as any)
+          .eq('orden_salida_id', ordenSalidaId);
+
+        // Asegurar vinculación y estado para los remitos de las paradas
+        const paradas = rutaActualizada.paradas || [];
+        for (const p of paradas) {
+          if (p.remito_id) {
+            await supabase
+              .from('remitos_transito')
+              .update({ estado: 'en_transito', orden_salida_id: ordenSalidaId } as any)
+              .eq('id', p.remito_id);
+          } else if (p.pedido_id) {
+            await supabase
+              .from('remitos_transito')
+              .update({ estado: 'en_transito', orden_salida_id: ordenSalidaId } as any)
+              .eq('pedido_id', p.pedido_id);
+          }
+        }
+      } else if (nuevoEstado === 'itinerario_cumplido') {
+        await supabase
+          .from('ordenes_salida')
+          .update({ estado: 'cerrada', actualizado_en: new Date().toISOString() })
+          .eq('id', ordenSalidaId);
+      }
+    }
+
+    notifyDataChanged();
+    return rutaActualizada;
   },
 
   // --- Registrar Entrega de Parada (Tablet Chofer) con Conformidad o Novedad y Geoposición ---
   async registrarEntregaParada(params: {
     paradaId: string;
     rutaId: string;
-    pedidoId: string;
+    pedidoId?: string;
+    remitoId?: string;
     estadoEntrega: 'entregado' | 'con_novedad';
     receptorNombre?: string;
     receptorDocumento?: string;
@@ -241,7 +419,27 @@ export const despachosApi = {
     latitudEntrega?: number | null;
     longitudEntrega?: number | null;
   }) {
-    // 1. Intentar RPC almacenada
+    let targetPedidoId = params.pedidoId;
+    let targetRemitoId = params.remitoId;
+
+    // Si falta algún ID, resolverlo desde la fila de la parada
+    if (!targetPedidoId || !targetRemitoId) {
+      try {
+        const { data: pData } = await supabase
+          .from('rutas_paradas_itinerario')
+          .select('pedido_id, remito_id')
+          .eq('id', params.paradaId)
+          .maybeSingle();
+        if (pData) {
+          if (!targetPedidoId && pData.pedido_id) targetPedidoId = pData.pedido_id;
+          if (!targetRemitoId && pData.remito_id) targetRemitoId = pData.remito_id;
+        }
+      } catch (e) {
+        console.warn('Error resolviendo IDs de parada en registrarEntregaParada:', e);
+      }
+    }
+
+    let rpcDone = false;
     try {
       const { data: rpcData, error: rpcError } = await (supabase as any).rpc(
         'wms_registrar_entrega_parada',
@@ -258,6 +456,7 @@ export const despachosApi = {
       );
 
       if (!rpcError && rpcData) {
+        rpcDone = true;
         // Si hay coordenadas GPS, persistirlas directamente en la parada
         if (params.latitudEntrega && params.longitudEntrega) {
           try {
@@ -272,7 +471,6 @@ export const despachosApi = {
             console.warn('Aviso actualizando GPS en parada:', e);
           }
         }
-        return rpcData;
       }
       if (rpcError) {
         console.warn('RPC wms_registrar_entrega_parada fallback:', rpcError.message);
@@ -281,8 +479,9 @@ export const despachosApi = {
       console.warn('Excepción en RPC entrega:', e);
     }
 
-    // 2. Fallback Directo sobre tablas de Postgres
+    // 2. Si la RPC falló o no actualizó la parada, persistir directamente sobre tablas
     const horaActual = new Date().toISOString();
+    if (!rpcDone) {
     const updateData: any = {
       estado_entrega: params.estadoEntrega,
       hora_real_arribo: horaActual,
@@ -332,30 +531,55 @@ export const despachosApi = {
 
       if (stdErr) throw stdErr;
     }
+  }
 
-    // Si fue entregado con éxito o con novedad asentada, actualizar estado del pedido a 'despachado'
-    if (params.pedidoId) {
+    // Si fue entregado con éxito o con novedad asentada, despachar formalmente el pedido
+    if (targetPedidoId) {
       try {
-        const obsPedido = params.estadoEntrega === 'con_novedad' 
-          ? `Desvío en entrega: ${params.motivoNovedad || 'Novedad asentada en reparto'}` 
-          : undefined;
-
+        await pedidosApi.despacharPedido(targetPedidoId);
+        if (params.estadoEntrega === 'con_novedad' && params.motivoNovedad) {
+          await supabase
+            .from('pedidos')
+            .update({
+              observaciones: `Desvío en entrega: ${params.motivoNovedad}`,
+              actualizado_en: horaActual,
+            })
+            .eq('id', targetPedidoId);
+        }
+      } catch (errDesp) {
+        console.warn('Excepción invocando pedidosApi.despacharPedido:', errDesp);
         const updatePed: any = {
           estado: 'despachado',
           actualizado_en: horaActual,
         };
-        if (obsPedido) updatePed.observaciones = obsPedido;
-
+        if (params.estadoEntrega === 'con_novedad') {
+          updatePed.observaciones = `Desvío en entrega: ${params.motivoNovedad || 'Novedad asentada en reparto'}`;
+        }
         await supabase
           .from('pedidos')
           .update(updatePed)
-          .eq('id', params.pedidoId);
-      } catch (errPed) {
-        console.warn('No se pudo actualizar estado de pedido a despachado:', errPed);
+          .eq('id', targetPedidoId);
+      }
+
+      // Actualizar remito de tránsito a entregado_conforme o rechazado_parcial
+      try {
+        const estadoRemito = params.estadoEntrega === 'con_novedad' ? 'rechazado_parcial' : 'entregado_conforme';
+        if (targetRemitoId) {
+          await supabase
+            .from('remitos_transito')
+            .update({ estado: estadoRemito, actualizado_en: horaActual } as any)
+            .eq('id', targetRemitoId);
+        }
+        await supabase
+          .from('remitos_transito')
+          .update({ estado: estadoRemito, actualizado_en: horaActual } as any)
+          .eq('pedido_id', targetPedidoId);
+      } catch (errRem) {
+        console.warn('Aviso actualizando remito tras entrega:', errRem);
       }
     }
 
-    // Verificar paradas pendientes para actualizar estado de la ruta
+    // Verificar paradas pendientes para actualizar estado de la ruta y cerrar orden de salida si terminó
     try {
       const { data: paradasRestantes } = await supabase
         .from('rutas_paradas_itinerario')
@@ -371,6 +595,20 @@ export const despachosApi = {
           .from('rutas_entrega')
           .update({ estado: 'itinerario_cumplido' })
           .eq('id', params.rutaId);
+
+        // Cerrar orden de salida asociada
+        const { data: rutaInfo } = await supabase
+          .from('rutas_entrega')
+          .select('orden_salida_id')
+          .eq('id', params.rutaId)
+          .maybeSingle();
+
+        if (rutaInfo?.orden_salida_id) {
+          await supabase
+            .from('ordenes_salida')
+            .update({ estado: 'cerrada', actualizado_en: horaActual })
+            .eq('id', rutaInfo.orden_salida_id);
+        }
       } else {
         await supabase
           .from('rutas_entrega')
@@ -382,6 +620,7 @@ export const despachosApi = {
       console.warn('No se pudo verificar estado de la ruta:', errRuta);
     }
 
+    notifyDataChanged();
     return { success: true, parada_id: params.paradaId };
   },
 
@@ -401,7 +640,10 @@ export const despachosApi = {
           p_observaciones: params.observaciones || null,
         }
       );
-      if (!rpcError && rpcData) return rpcData;
+      if (!rpcError && rpcData) {
+        notifyDataChanged();
+        return rpcData;
+      }
     } catch (e) {
       console.warn('RPC adjuntar documento fallback:', e);
     }
@@ -415,7 +657,10 @@ export const despachosApi = {
         } as any)
         .eq('id', params.paradaId);
 
-      if (!updErr) return { success: true };
+      if (!updErr) {
+        notifyDataChanged();
+        return { success: true };
+      }
     } catch {
       // Ignorar si la columna no existe
     }
@@ -429,6 +674,7 @@ export const despachosApi = {
       .eq('id', params.paradaId);
 
     if (obsErr) throw obsErr;
+    notifyDataChanged();
     return { success: true };
   },
 
@@ -492,9 +738,11 @@ export const despachosApi = {
         .maybeSingle();
 
       if (fbError) throw fbError;
+      notifyDataChanged();
       return fbData;
     }
 
+    notifyDataChanged();
     return data;
   },
 
@@ -543,10 +791,12 @@ export const despachosApi = {
           .select()
           .maybeSingle();
         if (retryError) throw retryError;
+        notifyDataChanged();
         return retryData;
       }
       throw error;
     }
+    notifyDataChanged();
     return data;
   },
 
@@ -555,13 +805,15 @@ export const despachosApi = {
     const notaCierre = `[Cierre Forzado por Supervisor ${supervisorNombre} - ${new Date().toLocaleTimeString('es-AR')}: ${motivo}]`;
 
     let notasActuales = '';
+    let ordenSalidaId: string | null = null;
     try {
       const { data: ruta } = await supabase
         .from('rutas_entrega')
-        .select('notas_viaje')
+        .select('notas_viaje, orden_salida_id')
         .eq('id', rutaId)
         .maybeSingle();
       notasActuales = ruta?.notas_viaje || '';
+      ordenSalidaId = ruta?.orden_salida_id || null;
     } catch {}
 
     const notasActualizadas = notasActuales ? `${notasActuales} | ${notaCierre}` : notaCierre;
@@ -587,8 +839,22 @@ export const despachosApi = {
         .select()
         .maybeSingle();
       if (retryError) throw retryError;
-      return retryData;
+      data = retryData;
     }
+
+    // Cerrar la orden de salida asociada
+    if (ordenSalidaId) {
+      try {
+        await supabase
+          .from('ordenes_salida')
+          .update({ estado: 'cerrada', actualizado_en: new Date().toISOString() })
+          .eq('id', ordenSalidaId);
+      } catch (errOs) {
+        console.warn('Aviso cerrando orden de salida en forzarCierreRuta:', errOs);
+      }
+    }
+
+    notifyDataChanged();
     return data;
   },
 

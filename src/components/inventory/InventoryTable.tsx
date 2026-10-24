@@ -420,6 +420,7 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
 
       const esSalida =
         m.tipo_movimiento === 'despacho' ||
+        m.tipo_movimiento === 'entregado' ||
         m.tipo_movimiento === 'picking' ||
         m.tipo_movimiento === 'merma' ||
         m.tipo_movimiento === 'ajuste_negativo';
@@ -529,9 +530,11 @@ export const InventoryTable: React.FC<InventoryTableProps> = ({
       case 'putaway':
         return <Badge variant="success" dot pulse>Entrada / Putaway</Badge>;
       case 'picking':
-        return <Badge variant="warning" dot>Picking / Reserva</Badge>;
+        return <Badge variant="warning" dot>Picking / Preparación</Badge>;
+      case 'entregado':
+        return <Badge variant="danger" dot>Salida / Entregado</Badge>;
       case 'despacho':
-        return <Badge variant="danger" dot>Salida / Despacho</Badge>;
+        return <Badge variant="danger" dot>Salida / Despachado</Badge>;
       case 'ajuste_positivo':
         return <Badge variant="info" dot>Ajuste (+)</Badge>;
       case 'ajuste_negativo':

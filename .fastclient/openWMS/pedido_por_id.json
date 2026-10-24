@@ -1,0 +1,32 @@
+{
+  "name": "pedido_por_id",
+  "method": "POST",
+  "url": "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/wms_obtener_detalle_pedido_por_id",
+  "headers": [
+    {
+      "key": "apikey",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpncnNhZ2pocnd2dXRyeGloaG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNjM3MDYsImV4cCI6MjEwNTczOTcwNn0.05-pypAcRgCFv6cC2yi6_GcwRvoMtJQMG6500UjadD4",
+      "enabled": true
+    },
+    {
+      "key": "Content-Type",
+      "value": "application/json",
+      "enabled": true
+    }
+  ],
+  "body": {
+    "type": "json",
+    "raw": "{\"p_pedido_cliente\":\"PED-2026-2558\"}",
+    "form": [
+      {
+        "key": "p_pedido_cliente",
+        "value": "PED-2026-2558",
+        "enabled": true
+      }
+    ]
+  },
+  "auth": {
+    "type": "bearer",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpncnNhZ2pocnd2dXRyeGloaG5nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAxNjM3MDYsImV4cCI6MjEwNTczOTcwNn0.05-pypAcRgCFv6cC2yi6_GcwRvoMtJQMG6500UjadD4"
+  }
+}

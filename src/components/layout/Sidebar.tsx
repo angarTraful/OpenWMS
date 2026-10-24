@@ -36,6 +36,7 @@ export type TabType =
   | 'programacion'
   | 'outbound'
   | 'kardex'
+  | 'operaciones'
   | 'analytics'
   | 'billing'
   | 'masters'
@@ -80,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'rutas', label: '3. Ruteos', icon: Truck, badge: 'Etapa 3' },
         { id: 'programacion', label: 'Planilla Programación', icon: FileSpreadsheet, badge: 'Clientes' },
         { id: 'kardex', label: 'Kardex Trazabilidad', icon: History },
+        { id: 'operaciones', label: 'Operaciones', icon: Boxes, badge: 'Colector' },
       ],
     },
     {

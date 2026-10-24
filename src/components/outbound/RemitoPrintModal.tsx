@@ -108,6 +108,7 @@ export const RemitoPrintModal: React.FC<RemitoPrintModalProps> = ({
         pedidoId: pedido.id,
         numeroRemitoRx: numeroRemito.trim(),
         cae: cae.trim() || undefined,
+        ordenSalidaId: (pedido as any).orden_salida_id || (pedido as any).orden_salida?.id || undefined,
         valorDeclaradoTotal: Number(valorDeclaradoTotal) || 0,
       });
 

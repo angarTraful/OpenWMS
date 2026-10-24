@@ -18,6 +18,9 @@ import {
   Smartphone,
   Truck,
   Cloud,
+  PackageCheck,
+  FileSpreadsheet,
+  Boxes,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { TabType } from './Sidebar';
@@ -92,20 +95,30 @@ const TAB_TITLES: Record<TabType, { title: string; subtitle: string; icon: React
     icon: Truck,
   },
   pedidos: {
-    title: '',
-    subtitle: '',
-    icon: 'symbol'
+    title: '1. Pedidos & Picking',
+    subtitle: 'Gestión y preparación de pedidos solicitados por clientes',
+    icon: PackageCheck,
   },
   salidas: {
-    title: '',
-    subtitle: '',
-    icon: 'symbol'
+    title: '2. Salidas & Despachos',
+    subtitle: 'Consolidación de bultos, remitos, romaneos y bultos listos para entrega',
+    icon: ArrowUpFromLine,
   },
   rutas: {
-    title: '',
-    subtitle: '',
-    icon: 'symbol'
-  }
+    title: '3. Ruteos & Despachos',
+    subtitle: 'Planificación de itinerarios, asignación de choferes y seguimiento de entregas',
+    icon: Truck,
+  },
+  programacion: {
+    title: 'Planilla de Programación',
+    subtitle: 'Programación de entregas por cliente y seguimiento de cargas',
+    icon: FileSpreadsheet,
+  },
+  operaciones: {
+    title: 'Monitor & Colector de Operaciones',
+    subtitle: 'Totalizador consolidado de flujo logístico (Entradas, Pedidos, Salidas y Rutas)',
+    icon: Boxes,
+  },
 };
 
 export const TopHeader: React.FC<TopHeaderProps> = ({

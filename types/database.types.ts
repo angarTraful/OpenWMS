@@ -663,6 +663,8 @@ export type Database = {
           ubicacion_origen_id: string | null
           usuario_id: string | null
           volumen_m3: number
+          pedido_id: string | null
+          estado: string | null
         }
         Insert: {
           articulo_id: string
@@ -679,6 +681,8 @@ export type Database = {
           ubicacion_origen_id?: string | null
           usuario_id?: string | null
           volumen_m3?: number
+          pedido_id?: string | null
+          estado?: string | null
         }
         Update: {
           articulo_id?: string
@@ -695,6 +699,8 @@ export type Database = {
           ubicacion_origen_id?: string | null
           usuario_id?: string | null
           volumen_m3?: number
+          pedido_id?: string | null
+          estado?: string | null
         }
         Relationships: [
           {
@@ -739,6 +745,83 @@ export type Database = {
             referencedRelation: "ubicaciones"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      operaciones: {
+        Row: {
+          id: string
+          id_operacion: string
+          cliente_id: string | null
+          cliente_nombre: string
+          unidad_negocio: string | null
+          fechahora_alta: string
+          fechahora_fin: string | null
+          tipo_op: 'entrada' | 'pedido' | 'salida' | 'entrega'
+          documento_movimiento: string | null
+          documento_heredado: string | null
+          lotes_despacho: string | null
+          cantidad_total: number
+          m3_totales: number
+          novedad_desvio: string | null
+          usuario_creador: string
+          usuario_creador_id: string | null
+          estado: 'en_proceso' | 'completada' | 'cancelada'
+          referencia_id: string | null
+          creado_en: string
+          actualizado_en: string
+        }
+        Insert: {
+          id?: string
+          id_operacion: string
+          cliente_id?: string | null
+          cliente_nombre?: string
+          unidad_negocio?: string | null
+          fechahora_alta?: string
+          fechahora_fin?: string | null
+          tipo_op: 'entrada' | 'pedido' | 'salida' | 'entrega'
+          documento_movimiento?: string | null
+          documento_heredado?: string | null
+          lotes_despacho?: string | null
+          cantidad_total?: number
+          m3_totales?: number
+          novedad_desvio?: string | null
+          usuario_creador?: string
+          usuario_creador_id?: string | null
+          estado?: 'en_proceso' | 'completada' | 'cancelada'
+          referencia_id?: string | null
+          creado_en?: string
+          actualizado_en?: string
+        }
+        Update: {
+          id?: string
+          id_operacion?: string
+          cliente_id?: string | null
+          cliente_nombre?: string
+          unidad_negocio?: string | null
+          fechahora_alta?: string
+          fechahora_fin?: string | null
+          tipo_op?: 'entrada' | 'pedido' | 'salida' | 'entrega'
+          documento_movimiento?: string | null
+          documento_heredado?: string | null
+          lotes_despacho?: string | null
+          cantidad_total?: number
+          m3_totales?: number
+          novedad_desvio?: string | null
+          usuario_creador?: string
+          usuario_creador_id?: string | null
+          estado?: 'en_proceso' | 'completada' | 'cancelada'
+          referencia_id?: string | null
+          creado_en?: string
+          actualizado_en?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operaciones_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          }
         ]
       }
       ordenes_recepcion: {
@@ -1274,6 +1357,8 @@ export type Database = {
           cantidad_solicitada: number
           id: string
           pedido_id: string
+          lote_id: string | null
+          ubicacion_id: string | null
         }
         Insert: {
           articulo_id: string
@@ -1282,6 +1367,8 @@ export type Database = {
           cantidad_solicitada: number
           id?: string
           pedido_id: string
+          lote_id?: string | null
+          ubicacion_id?: string | null
         }
         Update: {
           articulo_id?: string
@@ -1290,6 +1377,8 @@ export type Database = {
           cantidad_solicitada?: number
           id?: string
           pedido_id?: string
+          lote_id?: string | null
+          ubicacion_id?: string | null
         }
         Relationships: [
           {
@@ -2198,7 +2287,7 @@ export type Database = {
         Returns: Json
       }
       wms_asignar_picking_fefo: {
-        Args: { p_pedido_id: string; p_estrategia?: string }
+        Args: { p_pedido_id: string; p_estrategia?: string; p_asignaciones_manuales?: Json }
         Returns: Json
       }
       wms_confirmar_picking: {
@@ -2307,6 +2396,39 @@ export type Database = {
         Args: {
           p_movimientos: Json
           p_ignorar_errores?: boolean
+        }
+        Returns: Json
+      }
+      wms_reasignar_tarea_picking: {
+        Args: {
+          p_tarea_picking_id: string
+          p_nuevo_lote_id: string
+          p_nueva_ubicacion_id: string
+          p_nueva_cantidad?: number | null
+        }
+        Returns: Json
+      }
+      wms_crear_tarea_picking_manual: {
+        Args: {
+          p_pedido_id: string
+          p_pedido_detalle_id: string
+          p_articulo_id: string
+          p_lote_id: string
+          p_ubicacion_id: string
+          p_cantidad: number
+          p_pallet_id?: string | null
+        }
+        Returns: Json
+      }
+      wms_cancelar_tarea_picking: {
+        Args: {
+          p_tarea_picking_id: string
+        }
+        Returns: Json
+      }
+      wms_deshacer_asignacion_picking: {
+        Args: {
+          p_pedido_id: string
         }
         Returns: Json
       }
@@ -2569,6 +2691,7 @@ export const Constants = {
         "paletizado_despacho",
         "picking",
         "despacho",
+        "entregado",
         "ajuste_positivo",
         "ajuste_negativo",
         "transferencia",

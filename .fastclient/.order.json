@@ -1,0 +1,6 @@
+{
+  "openWMS": [
+    "pedido_por_id.json",
+    "POST-rpc-wms_obtener_detalle_pedido_por_id.json"
+  ]
+}

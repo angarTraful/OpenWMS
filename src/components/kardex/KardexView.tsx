@@ -48,7 +48,7 @@ export const esMovimientoEntrada = (tipo?: string | null): boolean => {
 export const esMovimientoSalida = (tipo?: string | null): boolean => {
   return (
     tipo === 'despacho' ||
-    tipo === 'picking' ||
+    tipo === 'entregado' ||
     tipo === 'merma' ||
     tipo === 'ajuste_negativo'
   );
@@ -59,7 +59,8 @@ export const esMovimientoInterno = (tipo?: string | null): boolean => {
     tipo === 'transferencia' ||
     tipo === 'transferencia_interna' ||
     tipo === 'despaletizado' ||
-    tipo === 'paletizado_despacho'
+    tipo === 'paletizado_despacho' ||
+    tipo === 'picking'
   );
 };
 
@@ -435,8 +436,10 @@ export const KardexView: React.FC<KardexViewProps> = ({
       case 'ingreso_inicial':
       case 'putaway':
         return <Badge variant="success" dot pulse>Ingreso</Badge>;
+      case 'entregado':
+        return <Badge variant="danger" dot>Entregado</Badge>;
       case 'despacho':
-        return <Badge variant="danger" dot>Salida / Despacho</Badge>;
+        return <Badge variant="danger" dot>Despachado</Badge>;
       case 'picking':
         return <Badge variant="warning" dot>Picking / Preparación</Badge>;
       case 'transferencia':

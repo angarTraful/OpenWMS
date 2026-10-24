@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
 import type { Database } from '../../types/database.types';
+import { notifyDataChanged } from '../lib/dataSync';
 
 export type OrdenRecepcion = Database['public']['Tables']['ordenes_recepcion']['Row'];
 export type OrdenRecepcionInsert = Database['public']['Tables']['ordenes_recepcion']['Insert'];
@@ -104,6 +105,7 @@ export const recepcionesApi = {
       }
     }
 
+    notifyDataChanged();
     return data;
   },
 
@@ -139,6 +141,7 @@ export const recepcionesApi = {
       .single();
 
     if (error) throw error;
+    notifyDataChanged();
     return data;
   },
 
@@ -148,6 +151,7 @@ export const recepcionesApi = {
       p_nuevo_estado: nuevoEstado,
     });
     if (error) throw error;
+    notifyDataChanged();
     return data;
   },
 
@@ -166,6 +170,7 @@ export const recepcionesApi = {
     });
 
     if (error) throw error;
+    notifyDataChanged();
     return data;
   },
 
@@ -176,6 +181,7 @@ export const recepcionesApi = {
     });
 
     if (error) throw error;
+    notifyDataChanged();
     return data;
   },
 
@@ -193,6 +199,7 @@ export const recepcionesApi = {
       .eq('recepcion_id', recepcionId);
     if (err2) throw err2;
 
+    notifyDataChanged();
     return { exito: true };
   },
 
@@ -202,6 +209,7 @@ export const recepcionesApi = {
       .update({ lote_declarado: nuevoLote })
       .eq('id', detalleId);
     if (error) throw error;
+    notifyDataChanged();
     return { exito: true };
   }
 };
