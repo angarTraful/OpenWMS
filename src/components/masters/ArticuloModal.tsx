@@ -59,11 +59,13 @@ const UNIDADES_MEDIDA_DEFAULT = [
   'pallet',
 ];
 
+const EMPTY_CLIENTES: Cliente[] = [];
+
 export const ArticuloModal: React.FC<ArticuloModalProps> = ({
   isOpen,
   onClose,
   articulo,
-  clientes: clientesProp = [],
+  clientes: clientesProp = EMPTY_CLIENTES,
   defaultClienteId,
   onSuccess,
   onCreated,

@@ -272,7 +272,7 @@ export const rfApi = {
             cliente:clientes(razon_social)
           )
         `)
-        .in('recepcion.estado', ['en_control', 'en_descarga', 'arribado', 'ingresado']);
+        .in('recepcion.estado', ['en_control', 'en_descarga', 'inbound', 'en_playa']);
 
       const { data: recData, error: recError } = await recQuery;
       if (!recError && recData && recData.length > 0) {

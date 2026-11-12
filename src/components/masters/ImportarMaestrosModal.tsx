@@ -26,12 +26,14 @@ interface ImportarMaestrosModalProps {
   onSuccess: () => void;
 }
 
+const EMPTY_CLIENTES: Cliente[] = [];
+
 export const ImportarMaestrosModal: React.FC<ImportarMaestrosModalProps> = ({
   isOpen,
   onClose,
   tipo,
   tipoEntidad,
-  clientes: clientesProp = [],
+  clientes: clientesProp = EMPTY_CLIENTES,
   defaultClienteId,
   onSuccess,
 }) => {

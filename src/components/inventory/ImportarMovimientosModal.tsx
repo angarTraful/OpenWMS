@@ -75,12 +75,14 @@ interface ParsedMovimientoRow {
   advertencias: string[];
 }
 
+const EMPTY_ARRAY: any[] = [];
+
 export const ImportarMovimientosModal: React.FC<ImportarMovimientosModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  clientes: clientesProp = [],
-  almacenes: almacenesProp = [],
+  clientes: clientesProp = EMPTY_ARRAY,
+  almacenes: almacenesProp = EMPTY_ARRAY,
   defaultClienteId,
   defaultAlmacenId,
 }) => {

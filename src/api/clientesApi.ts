@@ -638,7 +638,9 @@ export const clientesApi = {
                   activo: true,
                   es_sucursal_propia: esSucursalPropia,
                 }));
-                await supabase.from('clientes_destinatarios').upsert(rows);
+                await supabase
+                  .from('clientes_destinatarios')
+                  .upsert(rows, { onConflict: 'cliente_id,destinatario_id' });
               } catch (relErr) {
                 console.warn('No se pudo vincular destinatario en tabla intermedia:', relErr);
               }
@@ -740,7 +742,9 @@ export const clientesApi = {
             activo: true,
             es_sucursal_propia: esSucursalPropia ?? false,
           }));
-          await supabase.from('clientes_destinatarios').upsert(toUpsert);
+          await supabase
+            .from('clientes_destinatarios')
+            .upsert(toUpsert, { onConflict: 'cliente_id,destinatario_id' });
         }
       } catch (relErr) {
         console.warn('Error sincronizando clientes_destinatarios:', relErr);
@@ -753,12 +757,15 @@ export const clientesApi = {
   async asociarClienteDestinatario(clienteId: string, destinatarioId: string, esSucursalPropia = false) {
     const { data, error } = await supabase
       .from('clientes_destinatarios')
-      .upsert({
-        cliente_id: clienteId,
-        destinatario_id: destinatarioId,
-        activo: true,
-        es_sucursal_propia: esSucursalPropia,
-      })
+      .upsert(
+        {
+          cliente_id: clienteId,
+          destinatario_id: destinatarioId,
+          activo: true,
+          es_sucursal_propia: esSucursalPropia,
+        },
+        { onConflict: 'cliente_id,destinatario_id' }
+      )
       .select()
       .single();
     if (error) throw error;
