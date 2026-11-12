@@ -27,6 +27,7 @@ import {
 const GEMINI_KEY_STORAGE = 'wms_gemini_api_key';
 const GEMINI_MODEL = 'gemini-3.8-flash';
 const GEMINI_INTERACTIONS_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+const DEFAULT_GEMINI_API_KEY = 'AQ.Ab8RN6JuBUUYq7EL_iWg6bPj-GjV4EZ6lxnHvX8eR4OkYXe6ww';
 
 export type TipoOperacionIA = 'outbound' | 'inbound';
 
@@ -136,7 +137,10 @@ export function getGeminiApiKey(): string {
   const envKey =
     (import.meta as any).env?.VITE_GEMINI_API_KEY ||
     (import.meta as any).env?.GEMINI_API_KEY;
-  return envKey ? String(envKey).trim() : '';
+  if (envKey && String(envKey).trim()) {
+    return String(envKey).trim();
+  }
+  return DEFAULT_GEMINI_API_KEY;
 }
 
 /**
@@ -515,33 +519,47 @@ ${textoMailOMensaje ? `TEXTO DEL MAIL / MENSAJE ADICIONAL:\n${textoMailOMensaje}
         );
       }
 
-      // B) Fallback directo desde navegador usando ?key= en URL y sin headers preflight no-CORS
-      const response = await fetch(
-        `${GEMINI_INTERACTIONS_ENDPOINT}?key=${encodeURIComponent(apiKey)}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: GEMINI_MODEL,
-            system_instruction: systemInstruction,
-            input: inputParts,
-            response_format: {
-              type: 'text',
-              mime_type: 'application/json',
-              schema: EXTRACTION_JSON_SCHEMA,
-            },
-          }),
-        }
-      );
+      // B) Fallback directo desde navegador con cascada automática de modelos ante 503 (alta demanda) o 429
+      const fallbackModels = ['gemini-3.8-flash', 'gemini-3.8-flash-lite', 'gemini-3.8-pro'];
+      let lastRespStatus = 503;
+      let lastErrBody = '';
 
-      if (!response.ok) {
-        const errBody = await response.text();
-        throw new Error(`Error en Gemini API (${response.status}): ${errBody}`);
+      for (const candidateModel of fallbackModels) {
+        const response = await fetch(
+          `${GEMINI_INTERACTIONS_ENDPOINT}?key=${encodeURIComponent(apiKey)}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: candidateModel,
+              system_instruction: systemInstruction,
+              input: inputParts,
+              response_format: {
+                type: 'text',
+                mime_type: 'application/json',
+                schema: EXTRACTION_JSON_SCHEMA,
+              },
+            }),
+          }
+        );
+
+        if (response.ok) {
+          interactionData = await response.json();
+          break;
+        }
+
+        lastRespStatus = response.status;
+        lastErrBody = await response.text();
+        if (response.status !== 503 && response.status !== 429 && response.status !== 404) {
+          break;
+        }
       }
 
-      interactionData = await response.json();
+      if (!interactionData) {
+        throw new Error(`Error en Gemini API (${lastRespStatus}): ${lastErrBody}`);
+      }
     }
 
     // Extraer el texto JSON desde la estructura `steps` o `output_text` / `outputs`
