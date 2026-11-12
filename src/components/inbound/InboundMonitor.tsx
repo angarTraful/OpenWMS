@@ -376,7 +376,7 @@ export const InboundMonitor: React.FC<InboundMonitorProps> = ({
               return {
                 cliente_id: clienteId,
                 codigo_lpn: `${pfx}/${String(i + 1).padStart(3, '0')}`,
-                estado: 'almacenado',
+                estado: 'en_stock' as const,
                 volumen_total_m3: (Number(activeDetalle.articulo?.volumen_unitario_m3) || 0) * bultosGrupo,
                 peso_total_kg: (Number(activeDetalle.articulo?.peso_unitario_kg) || 0) * bultosGrupo,
               };
