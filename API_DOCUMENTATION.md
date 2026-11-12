@@ -275,11 +275,48 @@ Columnas admitidas (separadas por `,`, `;` o tabulación `\t`):
 * `registrarEntregaParada(...)`: Registra entrega conforme (receptor, DNI, firma digital, foto POD) o novedad (faltantes de bultos) y finaliza atómicamente la parada.
 * `adjuntarDocumentoParada(...)`: Permite adjuntar o actualizar fotos de remitos conformados en paradas ya entregadas sin alterar datos de recepción.
 
-### G. Almacenamiento en Google Drive (`googleDriveService`)
-* `subirDocumentoAGoogleDrive({ file, base64, fileName, folder })`: Sube fotos y documentos pesados a la carpeta exclusiva **`OpenWMS_Documentos`** en Google Drive, evitando sobrecargar la base de datos PostgreSQL con datos base64.
-* En la base de datos (`rutas_paradas_itinerario.foto_remito_url`), se guarda **únicamente el enlace (URL público)** al archivo en Google Drive.
-* `normalizarUrlGoogleDrive(url)`: Genera URLs de visualización rápida y de alta resolución optimizadas para el navegador sin problemas de CORS.
-* `probarConexionGoogleDrive()`: Valida la conectividad con el Webhook de Google Apps Script.
+### G. Almacenamiento en Google Drive (`googleDriveService`) y Conciliación IA (`preOrdenesIaApi`)
+* `subirDocumentoAGoogleDrive({ file, base64, fileName, folder })`: Sube fotos, PDFs y documentos pesados a la carpeta exclusiva **`OpenWMS_Documentos`** en Google Drive (`Pedidos_IA`, `Packing_Lists_IA`, `CSV_Exportados`, `Remitos_Conformados`, `Recepciones`), evitando sobrecargar PostgreSQL con datos binarios.
+* `subirCSVAGoogleDrive({ csvContent, fileName, folder })`: Genera y sube el archivo `.csv` estandarizado a **`OpenWMS_Documentos/CSV_Exportados`** para que tanto el importador API como los sistemas externos del cliente puedan consumirlo por URL.
+* **Flujo de Pre-Órdenes y Conciliación (Bot WhatsApp + Portal Cliente + Personal Depósito)**:
+  1. **`wms_crear_pre_orden_ia(p_payload)`**: Crea una pre-orden (`outbound` o `inbound`) guardando `documento_origen_url` (archivo multimedia en Drive), `csv_generado_url` (CSV en Drive) y `csv_contenido`. Valida cada renglón contra el stock real por artículo y lote, devolviendo `lotes_disponibles` y marcando `tiene_faltante_stock`.
+  2. **`wms_modificar_pre_orden_conciliacion(p_pre_orden_id, p_renglones, p_actor, p_notas, p_csv_generado_url)`**: Permite que tanto el **cliente que precarga (vía Bot o Portal)** como **el personal nuestro de depósito** modifiquen cantidades, lotes (`lote` / `lote_id`) u observaciones si no hay stock suficiente, regenerando automáticamente el CSV hasta que la orden sea aceptada.
+  3. **`wms_aprobar_pre_orden_conciliacion(p_pre_orden_id, p_aprobado_por)`**: Acepta definitivamente la pre-orden y la transforma atómicamente en un Pedido Oficial (`pedidos` en estado `ingresado` para pasar a `picking` -> `outbound` -> `ruta`) o en una Orden de Recepción Oficial (`ordenes_recepcion` en estado `programada` para pasar a `IN`).
+  4. **`wms_listar_pre_ordenes_cliente(p_cliente, p_estado)`**: Lista las pre-órdenes del cliente (código `'001'`, UUID o `'000'` para todos) con sus links de Drive y CSV listo para importar.
+
+#### Ejemplo cURL para el Bot / Sistemas Externos (Modificar Cantidades y Lotes en Conciliación):
+```bash
+curl -X POST "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/wms_modificar_pre_orden_conciliacion" \
+  -H "apikey: <TU_SUPABASE_ANON_KEY>" \
+  -H "Authorization: Bearer <TU_SUPABASE_ANON_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "p_pre_orden_id": "PRE-OUT-2026-8412",
+    "p_actor": "cliente_bot",
+    "p_notas": "Ajusto cantidad al stock disponible del lote L-2026-A1",
+    "p_renglones": [
+      {
+        "sku": "SKU-ALIM-001",
+        "lote": "L-2026-A1",
+        "cantidad_original_ia": 50,
+        "cantidad_conciliada": 35,
+        "observaciones": "Confirmado por WhatsApp"
+      }
+    ]
+  }'
+```
+
+#### Ejemplo cURL para Aceptar la Pre-Orden y Pasarla a Picking / Inbound:
+```bash
+curl -X POST "https://zgrsagjhrwvutrxihhng.supabase.co/rest/v1/rpc/wms_aprobar_pre_orden_conciliacion" \
+  -H "apikey: <TU_SUPABASE_ANON_KEY>" \
+  -H "Authorization: Bearer <TU_SUPABASE_ANON_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "p_pre_orden_id": "PRE-OUT-2026-8412",
+    "p_aprobado_por": "personal_deposito"
+  }'
+```
 
 ### H. Usuarios, Roles y Permisos 3PL (`usuariosApi`)
 * `listarUsuarios(soloActivos?)`: Consulta todos los usuarios del sistema junto a su lista de roles asociados (`usuarios_roles` -> `roles`).

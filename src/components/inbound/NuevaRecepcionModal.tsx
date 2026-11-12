@@ -34,6 +34,7 @@ import { ArticuloModal } from '@/components/masters/ArticuloModal';
 import { LoteModal } from '@/components/masters/LoteModal';
 import { ModalPortal } from '@/components/ui/ModalPortal';
 import { subirDocumentoAGoogleDrive, normalizarUrlGoogleDrive } from '@/lib/googleDriveService';
+import { ReconocimientoIADocumentoPanel } from '@/components/common/ReconocimientoIADocumentoPanel';
 
 interface RenglonItem {
   id: string;
@@ -766,6 +767,97 @@ export const NuevaRecepcionModal: React.FC<NuevaRecepcionModalProps> = ({
 
           {/* Modal Content Scrollable */}
           <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+            {/* Reconocimiento con IA (Packing List / Remitos / PDFs / Imágenes / Mails) + Drive + Conciliación */}
+            <ReconocimientoIADocumentoPanel
+              tipoOperacion="inbound"
+              clienteId={clienteId}
+              clienteCodigoOrCuit={
+                clientesList.find((c) => c.id === clienteId)?.codigo ||
+                clientesList.find((c) => c.id === clienteId)?.cuit ||
+                ''
+              }
+              almacenId={almacenId}
+              articulosCatalogo={articulosCliente}
+              onAplicarExtraccion={(res) => {
+                if (res.orden_compra || res.transporte_datos?.nro_contenedor_oc) {
+                  setNroContenedorOc(res.transporte_datos?.nro_contenedor_oc || res.orden_compra);
+                }
+                if (res.transporte_datos?.transporte_empresa) {
+                  setTransporteEmpresa(res.transporte_datos.transporte_empresa);
+                }
+                if (res.transporte_datos?.patente_camion) {
+                  setPatenteCamion(res.transporte_datos.patente_camion);
+                }
+                if (res.transporte_datos?.chofer_nombre) {
+                  setChoferNombre(res.transporte_datos.chofer_nombre);
+                }
+                if (res.transporte_datos?.chofer_documento) {
+                  setChoferDocumento(res.transporte_datos.chofer_documento);
+                }
+                if (res.transporte_datos?.despacho_aduana) {
+                  setDespachoAduana(res.transporte_datos.despacho_aduana);
+                }
+                if (res.notas_generales) {
+                  setObservaciones((prev) =>
+                    prev ? `${prev} | ${res.notas_generales}` : res.notas_generales
+                  );
+                }
+
+                // Adjuntar enlaces de Google Drive (archivo original + CSV generado)
+                const nuevosDocs: DocumentoAdjunto[] = [];
+                const horaStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                if (res.documento_origen_url) {
+                  nuevosDocs.push({
+                    id: 'doc-ia-orig-' + Date.now(),
+                    nombre: res.documento_origen_nombre || 'Packing_List_Original',
+                    tipo: 'Packing List',
+                    size: 'Drive',
+                    url: res.documento_origen_url,
+                    fecha: horaStr,
+                  });
+                }
+                if (res.csv_generado_url) {
+                  nuevosDocs.push({
+                    id: 'doc-ia-csv-' + Date.now(),
+                    nombre: `${res.numero_referencia}_IA.csv`,
+                    tipo: 'CSV Exportado IA',
+                    size: 'Drive CSV',
+                    url: res.csv_generado_url,
+                    fecha: horaStr,
+                  });
+                }
+                if (nuevosDocs.length > 0) {
+                  setDocumentosAdjuntos((prev) => [...prev, ...nuevosDocs]);
+                }
+
+                // Volcar renglones extraídos y conciliados
+                if (res.renglones.length > 0) {
+                  const mapeados: RenglonItem[] = res.renglones.map((r, idx) => {
+                    const matchedArt =
+                      articulosCliente.find((a) => a.id === r.articulo_id) ||
+                      articulosCliente.find(
+                        (a) =>
+                          a.sku?.toLowerCase() === r.sku?.toLowerCase() ||
+                          a.nombre?.toLowerCase() === r.sku?.toLowerCase()
+                      );
+                    return {
+                      id: `row-ia-${Date.now()}-${idx}`,
+                      articulo_id: matchedArt?.id || r.articulo_id || '',
+                      lote_declarado: r.lote || loteOperacion || numeroRecepcion,
+                      fecha_vencimiento: r.fecha_vencimiento || '',
+                      cantidad_esperada: Number(r.cantidad_conciliada || r.cantidad_original_ia || 1),
+                      comentarios: r.observaciones || r.articulo_nombre || '',
+                    };
+                  });
+                  setRenglones(mapeados);
+                }
+              }}
+              onPreOrdenAprobada={() => {
+                onSuccess();
+                onClose();
+              }}
+            />
+
             {/* Bloque 1: Datos de Cabecera (Transporte, Lote de Operación, Fecha/Hora y Tipo CNTR) */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">

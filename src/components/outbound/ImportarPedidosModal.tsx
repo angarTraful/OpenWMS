@@ -21,6 +21,7 @@ import { inventarioApi } from '@/api/inventarioApi';
 import { pedidosApi } from '@/api/pedidosApi';
 import { QuickSelect } from '@/components/ui/QuickSelect';
 import { ModalPortal } from '@/components/ui/ModalPortal';
+import { ReconocimientoIADocumentoPanel } from '@/components/common/ReconocimientoIADocumentoPanel';
 
 interface ImportarPedidosModalProps {
   isOpen: boolean;
@@ -527,6 +528,27 @@ export const ImportarPedidosModal: React.FC<ImportarPedidosModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Panel IA Multimodal + Google Drive + Pre-Orden Conciliación */}
+              <ReconocimientoIADocumentoPanel
+                tipoOperacion="outbound"
+                clienteId={selectedClienteId}
+                clienteCodigoOrCuit={
+                  clientes.find((c) => c.id === selectedClienteId)?.cuit ||
+                  clientes.find((c) => c.id === selectedClienteId)?.codigo ||
+                  ''
+                }
+                articulosCatalogo={cacheArticulos[selectedClienteId] || []}
+                destinatariosCatalogo={cacheDestinatarios[selectedClienteId] || []}
+                onAplicarExtraccion={(res) => {
+                  setRawText(res.csv_contenido);
+                  setFileName(res.documento_origen_nombre || `${res.numero_referencia}.csv`);
+                }}
+                onPreOrdenAprobada={() => {
+                  onSuccess();
+                  onClose();
+                }}
+              />
 
               {/* Drag and drop upload zone */}
               <div

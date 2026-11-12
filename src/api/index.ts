@@ -32,4 +32,19 @@ export type {
 export { operacionesApi } from './operacionesApi';
 export type { Operacion, OperacionInsert, OperacionUpdate, FiltrosOperaciones, EstadisticasOperaciones } from './operacionesApi';
 
+export {
+  preOrdenesIaApi,
+  analizarDocumentoConIA,
+  generarCSVDesdeExtraccion,
+  descargarCSVLocal,
+  getGeminiApiKey,
+  setGeminiApiKey,
+} from '../lib/aiDocumentService';
+export type {
+  TipoOperacionIA,
+  RenglonExtraidoIA,
+  ResultadoExtraccionIA,
+  PreOrdenConciliacionRecord,
+} from '../lib/aiDocumentService';
+
 export type * from '../../types/database.types';

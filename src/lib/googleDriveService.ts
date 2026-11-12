@@ -16,7 +16,8 @@ export interface SubirArchivoParams {
   file?: File | null;
   base64?: string | null;
   fileName?: string;
-  folder?: 'Remitos_Conformados' | 'Recepciones' | 'Despachos' | 'General';
+  mimeType?: string;
+  folder?: 'Remitos_Conformados' | 'Recepciones' | 'Despachos' | 'Pedidos_IA' | 'Packing_Lists_IA' | 'CSV_Exportados' | 'General' | string;
   rootFolder?: string;
 }
 
@@ -180,11 +181,11 @@ export function obtenerUrlVisorGoogleDrive(url: string | null | undefined): stri
 export async function subirDocumentoAGoogleDrive(params: SubirArchivoParams): Promise<SubirArchivoResult> {
   let base64Data = params.base64 || null;
   let fileName = params.fileName;
-  let mimeType = 'image/jpeg';
+  let mimeType = params.mimeType || 'image/jpeg';
 
   if (params.file) {
     if (!fileName) fileName = params.file.name;
-    mimeType = params.file.type || 'image/jpeg';
+    mimeType = params.file.type || params.mimeType || 'image/jpeg';
     if (!base64Data) {
       base64Data = await fileToBase64(params.file);
     }
@@ -308,4 +309,26 @@ export async function subirDocumentoAGoogleDrive(params: SubirArchivoParams): Pr
     fileName,
     provider: 'base64_fallback',
   };
+}
+
+/**
+ * Convierte un contenido de texto CSV en un archivo .csv y lo sube a Google Drive
+ * (en la subcarpeta CSV_Exportados dentro de OpenWMS_Documentos) para que tanto
+ * la API de importación como los sistemas externos de los clientes puedan acceder.
+ */
+export async function subirCSVAGoogleDrive(params: {
+  csvContent: string;
+  fileName: string;
+  folder?: string;
+}): Promise<SubirArchivoResult> {
+  const cleanFileName = params.fileName.endsWith('.csv') ? params.fileName : `${params.fileName}.csv`;
+  const blob = new Blob(['\uFEFF' + params.csvContent], { type: 'text/csv;charset=utf-8;' });
+  const file = new File([blob], cleanFileName, { type: 'text/csv' });
+
+  return subirDocumentoAGoogleDrive({
+    file,
+    fileName: cleanFileName,
+    mimeType: 'text/csv',
+    folder: params.folder || 'CSV_Exportados',
+  });
 }
