@@ -370,32 +370,14 @@ export async function analizarDocumentoConIA(params: {
   } = params;
 
   const apiKey = getGeminiApiKey();
+  const isBinaryMedia = Boolean(
+    file &&
+      (file.type.startsWith('image/') ||
+        file.type === 'application/pdf' ||
+        file.name.toLowerCase().endsWith('.pdf'))
+  );
 
-  // 1. Subir el archivo multimedia original a Google Drive en paralelo (si existe)
-  let docOrigenUrl = '';
-  let docOrigenNombre = file?.name || '';
-  let docOrigenMime = file?.type || (textoMailOMensaje ? 'text/plain' : '');
-
-  const uploadOriginalPromise = (async () => {
-    if (!file || !subirAGoogleDrive) return;
-    try {
-      const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const folder = tipoOperacion === 'inbound' ? 'Packing_Lists_IA' : 'Pedidos_IA';
-      const res = await subirDocumentoAGoogleDrive({
-        file,
-        fileName: `${tipoOperacion.toUpperCase()}_IA_${Date.now()}_${cleanName}`,
-        mimeType: file.type || 'application/octet-stream',
-        folder,
-      });
-      if (res.success && res.url) {
-        docOrigenUrl = res.viewUrl || res.url;
-      }
-    } catch (err) {
-      console.warn('No se pudo subir el documento original a Google Drive:', err);
-    }
-  })();
-
-  // 2. Preparar contexto compacto del catálogo del cliente y destinatarios para la IA
+  // 1. Preparar contexto compacto del catálogo del cliente y destinatarios para la IA
   const catalogoResumen = articulosCatalogo.slice(0, 250).map((a) => ({
     sku: a.sku || a.nombre,
     nombre: a.nombre,
@@ -410,10 +392,36 @@ export async function analizarDocumentoConIA(params: {
     direccion: d.direccion_entrega || '',
   }));
 
+  // 2. Subir el archivo multimedia original a Google Drive con control anti-duplicados (sin Date.now() en el nombre)
+  let docOrigenUrl = '';
+  let docOrigenNombre = file?.name || '';
+  let docOrigenMime = file?.type || (textoMailOMensaje ? 'text/plain' : '');
+
+  const uploadOriginalPromise = (async () => {
+    if (!file || !subirAGoogleDrive) return;
+    try {
+      const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const folder = tipoOperacion === 'inbound' ? 'Packing_Lists_IA' : 'Pedidos_IA';
+      const res = await subirDocumentoAGoogleDrive({
+        file,
+        fileName: `${tipoOperacion.toUpperCase()}_IA_${cleanName}`,
+        mimeType: file.type || 'application/octet-stream',
+        folder,
+        deduplicate: true,
+        overwrite: false,
+      });
+      if (res.success && res.url) {
+        docOrigenUrl = res.viewUrl || res.url;
+      }
+    } catch (err) {
+      console.warn('No se pudo subir el documento original a Google Drive:', err);
+    }
+  })();
+
   let extractedRaw: any = null;
 
-  if (apiKey) {
-    //Construir input multimodal para la API Interactions de Gemini 3.8 Flash
+  if (apiKey || isBinaryMedia) {
+    // Construir input multimodal para la API Interactions de Gemini 3.8 Flash
     const inputParts: any[] = [];
 
     const systemInstruction = `Sos un asistente experto en logística 3PL y WMS (OpenWMS).
@@ -467,37 +475,80 @@ ${textoMailOMensaje ? `TEXTO DEL MAIL / MENSAJE ADICIONAL:\n${textoMailOMensaje}
       }
     }
 
-    const response = await fetch(GEMINI_INTERACTIONS_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-        'Api-Revision': '2026-05-20',
+    const requestPayload = {
+      apiKey,
+      model: GEMINI_MODEL,
+      system_instruction: systemInstruction,
+      input: inputParts,
+      response_format: {
+        type: 'text',
+        mime_type: 'application/json',
+        schema: EXTRACTION_JSON_SCHEMA,
       },
-      body: JSON.stringify({
-        model: GEMINI_MODEL,
-        system_instruction: systemInstruction,
-        input: inputParts,
-        response_format: {
-          type: 'text',
-          mime_type: 'application/json',
-          schema: EXTRACTION_JSON_SCHEMA,
-        },
-      }),
-    });
+    };
 
-    if (!response.ok) {
-      const errBody = await response.text();
-      throw new Error(`Error en Gemini API (${response.status}): ${errBody}`);
+    let interactionData: any = null;
+
+    // A) Llamada primaria vía Supabase Edge Function (`procesar-documento-ia`)
+    //    Evita cualquier bloqueo CORS (Failed to fetch) en el navegador.
+    try {
+      const { data: edgeData, error: edgeErr } = await supabase.functions.invoke(
+        'procesar-documento-ia',
+        {
+          body: requestPayload,
+        }
+      );
+
+      if (edgeErr) {
+        throw edgeErr;
+      }
+      if (edgeData?.error) {
+        throw new Error(edgeData.details ? `${edgeData.error}: ${edgeData.details}` : edgeData.error);
+      }
+      interactionData = edgeData;
+    } catch (edgeException: any) {
+      console.warn('Fallback directo a Gemini tras excepción en Edge Function:', edgeException);
+
+      if (!apiKey) {
+        throw new Error(
+          'Falta configurar VITE_GEMINI_API_KEY en tu archivo .env (o en el icono de llave 🔑 arriba a la derecha).'
+        );
+      }
+
+      // B) Fallback directo desde navegador usando ?key= en URL y sin headers preflight no-CORS
+      const response = await fetch(
+        `${GEMINI_INTERACTIONS_ENDPOINT}?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: GEMINI_MODEL,
+            system_instruction: systemInstruction,
+            input: inputParts,
+            response_format: {
+              type: 'text',
+              mime_type: 'application/json',
+              schema: EXTRACTION_JSON_SCHEMA,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errBody = await response.text();
+        throw new Error(`Error en Gemini API (${response.status}): ${errBody}`);
+      }
+
+      interactionData = await response.json();
     }
 
-    const interactionData = await response.json();
-
-    // Extraer el texto JSON desde la estructura `steps` (Api-Revision 2026-05-20) o `output_text` / `outputs`
+    // Extraer el texto JSON desde la estructura `steps` o `output_text` / `outputs`
     let jsonText = '';
-    if (typeof interactionData.output_text === 'string') {
+    if (typeof interactionData?.output_text === 'string') {
       jsonText = interactionData.output_text;
-    } else if (Array.isArray(interactionData.steps)) {
+    } else if (Array.isArray(interactionData?.steps)) {
       for (const step of interactionData.steps) {
         if (step.type === 'model_output' && Array.isArray(step.content)) {
           for (const part of step.content) {
@@ -507,7 +558,7 @@ ${textoMailOMensaje ? `TEXTO DEL MAIL / MENSAJE ADICIONAL:\n${textoMailOMensaje}
           }
         }
       }
-    } else if (Array.isArray(interactionData.outputs)) {
+    } else if (Array.isArray(interactionData?.outputs)) {
       for (const out of interactionData.outputs) {
         if (out.type === 'text' && out.text) {
           jsonText += out.text;
@@ -521,13 +572,6 @@ ${textoMailOMensaje ? `TEXTO DEL MAIL / MENSAJE ADICIONAL:\n${textoMailOMensaje}
 
     extractedRaw = JSON.parse(jsonText);
   } else {
-    // Si no hay API Key configurada: si es imagen o PDF binario, solicitar la clave; si es texto/mail, parsear heurísticamente
-    if (file && (file.type.startsWith('image/') || file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'))) {
-      throw new Error(
-        'Para reconocer imágenes o archivos PDF con IA (Gemini 3.8 Flash), ingresá tu Gemini API Key en el botón "Configurar IA" o en VITE_GEMINI_API_KEY.'
-      );
-    }
-
     const sourceText = textoMailOMensaje || (file ? await file.text() : '');
     if (!sourceText.trim()) {
       throw new Error('Ingresá el texto del correo/mensaje o adjuntá un archivo para analizar.');

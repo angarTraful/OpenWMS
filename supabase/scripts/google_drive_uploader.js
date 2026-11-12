@@ -29,7 +29,42 @@ function doPost(e) {
     var decoded = Utilities.base64Decode(base64Data);
     var mimeType = data.mimeType || "image/jpeg";
     var fileName = data.fileName || ("Doc_" + Utilities.formatDate(new Date(), "GMT-3", "yyyyMMdd_HHmmss") + ".jpg");
-    
+    var overwrite = data.overwrite === true;
+    var deduplicate = data.deduplicate !== false; // Por defecto evita duplicar archivos con el mismo nombre
+
+    // 3.1 Control anti-duplicados en la carpeta destino
+    var existingFiles = targetFolder.getFilesByName(fileName);
+    if (existingFiles.hasNext()) {
+      var existingFile = existingFiles.next();
+      if (overwrite) {
+        // Si se pide reemplazar (ej. actualización de CSV conciliado), enviar versión previa a papelera
+        existingFile.setTrashed(true);
+        while (existingFiles.hasNext()) {
+          existingFiles.next().setTrashed(true);
+        }
+      } else if (deduplicate) {
+        // Si ya existe el mismo archivo en la carpeta, devolver el existente sin duplicarlo en Drive
+        var existingId = existingFile.getId();
+        var existingViewUrl = existingFile.getUrl();
+        var existingDirectUrl = "https://drive.google.com/uc?export=view&id=" + existingId;
+        var existingThumbUrl = "https://drive.google.com/thumbnail?id=" + existingId + "&sz=w1200";
+
+        return ContentService
+          .createTextOutput(JSON.stringify({
+            success: true,
+            deduplicated: true,
+            fileId: existingId,
+            fileName: existingFile.getName(),
+            folder: targetFolder.getName(),
+            viewUrl: existingViewUrl,
+            directUrl: existingDirectUrl,
+            thumbnailUrl: existingThumbUrl,
+            url: existingThumbUrl
+          }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+
     var blob = Utilities.newBlob(decoded, mimeType, fileName);
     var file = targetFolder.createFile(blob);
     

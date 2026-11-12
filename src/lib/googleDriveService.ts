@@ -10,6 +10,7 @@
 import { supabase } from '@/api/supabaseClient';
 
 const STORAGE_KEY = 'wms_google_drive_webhook_url';
+const DEDUP_CACHE_KEY = 'wms_drive_upload_dedup_v1';
 const DEFAULT_ROOT_FOLDER = 'OpenWMS_Documentos';
 
 export interface SubirArchivoParams {
@@ -19,6 +20,10 @@ export interface SubirArchivoParams {
   mimeType?: string;
   folder?: 'Remitos_Conformados' | 'Recepciones' | 'Despachos' | 'Pedidos_IA' | 'Packing_Lists_IA' | 'CSV_Exportados' | 'General' | string;
   rootFolder?: string;
+  /** Si es true, reemplaza el archivo existente con el mismo nombre (ej. actualización de CSV conciliado) */
+  overwrite?: boolean;
+  /** Si es false, desactiva el control anti-duplicados (por defecto es true) */
+  deduplicate?: boolean;
 }
 
 export interface SubirArchivoResult {
@@ -28,7 +33,61 @@ export interface SubirArchivoResult {
   fileId?: string;
   fileName?: string;
   provider: 'google_drive' | 'supabase_storage' | 'base64_fallback';
+  deduplicated?: boolean;
   error?: string;
+}
+
+const inFlightUploads = new Map<string, Promise<SubirArchivoResult>>();
+
+/**
+ * Calcula un hash SHA-256 corto (12 chars hex) sobre el contenido base64 para evitar
+ * volver a subir la misma imagen/PDF/CSV a Google Drive si el usuario reintenta.
+ */
+async function computeContentHash(base64Data: string): Promise<string> {
+  const clean = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+  try {
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(clean);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')
+        .slice(0, 12);
+    }
+  } catch {}
+  // Fallback FNV-1a rápido si crypto.subtle no está disponible
+  let h = 0x811c9dc5;
+  for (let i = 0; i < clean.length; i++) {
+    h ^= clean.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0') + '_' + clean.length;
+}
+
+function getCachedUpload(dedupKey: string): SubirArchivoResult | null {
+  try {
+    const raw = localStorage.getItem(DEDUP_CACHE_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw);
+    return map[dedupKey] || null;
+  } catch {
+    return null;
+  }
+}
+
+function setCachedUpload(dedupKey: string, res: SubirArchivoResult): void {
+  try {
+    const raw = localStorage.getItem(DEDUP_CACHE_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    const keys = Object.keys(map);
+    if (keys.length > 200) {
+      delete map[keys[0]];
+    }
+    map[dedupKey] = res;
+    localStorage.setItem(DEDUP_CACHE_KEY, JSON.stringify(map));
+  } catch {}
 }
 
 /**
@@ -200,115 +259,154 @@ export async function subirDocumentoAGoogleDrive(params: SubirArchivoParams): Pr
     };
   }
 
+  const folderName = params.folder || 'Remitos_Conformados';
+  const deduplicate = params.deduplicate !== false;
+  const overwrite = params.overwrite === true;
+  const contentHash = await computeContentHash(base64Data);
+
   if (!fileName) {
-    const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
-    fileName = `Remito_${timestamp}.jpg`;
+    const ext = mimeType.includes('pdf') ? 'pdf' : mimeType.includes('csv') ? 'csv' : 'jpg';
+    fileName = `Doc_${contentHash}.${ext}`;
   }
 
-  const webhookUrl = getGoogleDriveWebhookUrl();
+  const dedupKey = `${folderName}:${contentHash}`;
 
-  // =========================================================================
-  // 1. MÉTODO PRIMARIO: SUBIDA A GOOGLE DRIVE
-  // =========================================================================
-  if (webhookUrl) {
+  // 0. CONTROL ANTI-DUPLICADOS: Si el mismo archivo (mismo hash de contenido) ya se subió
+  //    a esta carpeta, devolver instantáneamente el link existente sin volver a subirlo a Drive.
+  if (deduplicate && !overwrite) {
+    const cached = getCachedUpload(dedupKey);
+    if (cached && cached.success && cached.url) {
+      return { ...cached, deduplicated: true };
+    }
+    const inFlight = inFlightUploads.get(dedupKey);
+    if (inFlight) {
+      return inFlight;
+    }
+  }
+
+  const uploadTask = (async (): Promise<SubirArchivoResult> => {
+    const webhookUrl = getGoogleDriveWebhookUrl();
+
+    // =========================================================================
+    // 1. MÉTODO PRIMARIO: SUBIDA A GOOGLE DRIVE
+    // =========================================================================
+    if (webhookUrl) {
+      try {
+        const payload = {
+          base64: base64Data,
+          fileName,
+          fileHash: contentHash,
+          overwrite,
+          deduplicate,
+          mimeType,
+          folder: folderName,
+          rootFolder: params.rootFolder || DEFAULT_ROOT_FOLDER,
+        };
+
+        // Usar text/plain para evitar solicitudes de pre-flight CORS complejas en Google Apps Script
+        const response = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'text/plain;charset=utf-8',
+          },
+          body: JSON.stringify(payload),
+          mode: 'cors',
+          redirect: 'follow',
+        });
+
+        if (!response.ok) {
+          throw new Error(`Google Apps Script retornó error HTTP ${response.status}`);
+        }
+
+        const result = await response.json();
+        if (result && result.success && (result.url || result.thumbnailUrl || result.viewUrl)) {
+          const finalUrl = result.url || result.thumbnailUrl || result.viewUrl;
+          const driveRes: SubirArchivoResult = {
+            success: true,
+            url: finalUrl,
+            viewUrl: result.viewUrl || finalUrl,
+            fileId: result.fileId,
+            fileName,
+            provider: 'google_drive',
+            deduplicated: Boolean(result.deduplicated),
+          };
+          setCachedUpload(dedupKey, driveRes);
+          return driveRes;
+        } else {
+          throw new Error(result?.error || 'Respuesta inválida de Google Apps Script');
+        }
+      } catch (gDriveErr: any) {
+        console.warn('Fallo al subir a Google Drive, intentando fallback en Supabase Storage:', gDriveErr);
+      }
+    }
+
+    // =========================================================================
+    // 2. MÉTODO SECUNDARIO (FALLBACK): BUCKET SUPABASE STORAGE
+    //    (Evita igualmente contaminar la base de datos con base64 gigantes)
+    // =========================================================================
     try {
-      const payload = {
-        base64: base64Data,
-        fileName,
-        mimeType,
-        folder: params.folder || 'Remitos_Conformados',
-        rootFolder: params.rootFolder || DEFAULT_ROOT_FOLDER,
-      };
+      const bucketName = 'documentos-remitos';
+      const cleanFileName = fileName!.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `${folderName}/${contentHash}_${cleanFileName}`;
 
-      // Usar text/plain para evitar solicitudes de pre-flight CORS complejas en Google Apps Script
-      const response = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
-        },
-        body: JSON.stringify(payload),
-        mode: 'cors',
-        redirect: 'follow',
-      });
-
-      if (!response.ok) {
-        throw new Error(`Google Apps Script retornó error HTTP ${response.status}`);
+      // Convertir base64 a Blob para Supabase Storage
+      const base64Clean = base64Data!.includes(',') ? base64Data!.split(',')[1] : base64Data!;
+      const byteCharacters = atob(base64Clean);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: mimeType });
 
-      const result = await response.json();
-      if (result && result.success && (result.url || result.thumbnailUrl || result.viewUrl)) {
-        const finalUrl = result.url || result.thumbnailUrl || result.viewUrl;
-        return {
-          success: true,
-          url: finalUrl,
-          viewUrl: result.viewUrl || finalUrl,
-          fileId: result.fileId,
-          fileName,
-          provider: 'google_drive',
-        };
-      } else {
-        throw new Error(result?.error || 'Respuesta inválida de Google Apps Script');
-      }
-    } catch (gDriveErr: any) {
-      console.warn('Fallo al subir a Google Drive, intentando fallback en Supabase Storage:', gDriveErr);
-    }
-  }
-
-  // =========================================================================
-  // 2. MÉTODO SECUNDARIO (FALLBACK): BUCKET SUPABASE STORAGE
-  //    (Evita igualmente contaminar la base de datos con base64 gigantes)
-  // =========================================================================
-  try {
-    const bucketName = 'documentos-remitos';
-    const cleanFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storagePath = `${params.folder || 'remitos'}/${Date.now()}_${cleanFileName}`;
-
-    // Convertir base64 a Blob para Supabase Storage
-    const base64Clean = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-    const byteCharacters = atob(base64Clean);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: mimeType });
-
-    const { data, error } = await supabase.storage
-      .from(bucketName)
-      .upload(storagePath, blob, {
-        contentType: mimeType,
-        upsert: true,
-      });
-
-    if (!error && data) {
-      const { data: pubData } = supabase.storage
+      const { data, error } = await supabase.storage
         .from(bucketName)
-        .getPublicUrl(storagePath);
+        .upload(storagePath, blob, {
+          contentType: mimeType,
+          upsert: true,
+        });
 
-      if (pubData?.publicUrl) {
-        return {
-          success: true,
-          url: pubData.publicUrl,
-          viewUrl: pubData.publicUrl,
-          fileName,
-          provider: 'supabase_storage',
-        };
+      if (!error && data) {
+        const { data: pubData } = supabase.storage
+          .from(bucketName)
+          .getPublicUrl(storagePath);
+
+        if (pubData?.publicUrl) {
+          const storageRes: SubirArchivoResult = {
+            success: true,
+            url: pubData.publicUrl,
+            viewUrl: pubData.publicUrl,
+            fileName,
+            provider: 'supabase_storage',
+          };
+          setCachedUpload(dedupKey, storageRes);
+          return storageRes;
+        }
       }
+    } catch (storageErr) {
+      console.warn('Supabase Storage tampoco disponible:', storageErr);
     }
-  } catch (storageErr) {
-    console.warn('Supabase Storage tampoco disponible:', storageErr);
-  }
 
-  // =========================================================================
-  // 3. FALLBACK DE EMERGENCIA (Local base64 con advertencia)
-  // =========================================================================
-  return {
-    success: true,
-    url: base64Data,
-    viewUrl: base64Data,
-    fileName,
-    provider: 'base64_fallback',
-  };
+    // =========================================================================
+    // 3. FALLBACK DE EMERGENCIA (Local base64 con advertencia)
+    // =========================================================================
+    return {
+      success: true,
+      url: base64Data!,
+      viewUrl: base64Data!,
+      fileName,
+      provider: 'base64_fallback',
+    };
+  })();
+
+  if (deduplicate && !overwrite) {
+    inFlightUploads.set(dedupKey, uploadTask);
+  }
+  try {
+    return await uploadTask;
+  } finally {
+    inFlightUploads.delete(dedupKey);
+  }
 }
 
 /**
@@ -320,6 +418,7 @@ export async function subirCSVAGoogleDrive(params: {
   csvContent: string;
   fileName: string;
   folder?: string;
+  overwrite?: boolean;
 }): Promise<SubirArchivoResult> {
   const cleanFileName = params.fileName.endsWith('.csv') ? params.fileName : `${params.fileName}.csv`;
   const blob = new Blob(['\uFEFF' + params.csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -330,5 +429,6 @@ export async function subirCSVAGoogleDrive(params: {
     fileName: cleanFileName,
     mimeType: 'text/csv',
     folder: params.folder || 'CSV_Exportados',
+    overwrite: params.overwrite ?? true,
   });
 }
