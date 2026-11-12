@@ -1,7 +1,12 @@
 {
-    "folders": [
-        {
-            "path": "."
-        }
-    ]
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"remote.autoForwardPorts": false,
+		"remote.forwardOnOpen": false,
+		"remote.autoForwardPortsSource": "output"
+	}
 }
